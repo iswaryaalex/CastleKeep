@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CastleKeep</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
+<style>
+body{overflow:auto; display:grid; place-items:center; min-height:100vh;
+  background:var(--bg); padding:48px 20px}
+
+.launch{width:100%; max-width:520px}
+
+.hero{display:flex; align-items:center; gap:14px; margin-bottom:24px}
+.mark{width:52px; height:52px; border-radius:14px; display:grid;
+  place-items:center; background:var(--brand-soft);
+  border:1px solid var(--brand-line); flex:0 0 52px}
+.mark svg{width:42px; height:42px}
+.wordmark{font-size:22px; font-weight:800; letter-spacing:-.02em; line-height:1.2}
+.tagline{color:var(--muted); font-size:12.5px; margin-top:3px}
+
+.card{background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; box-shadow:var(--shadow); margin-bottom:14px}
+.card h2{font-size:10px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint); padding:14px 18px 2px}
+
+.row{display:flex; gap:12px; align-items:flex-start; padding:11px 18px}
+.row + .row{border-top:1px solid var(--border)}
+.card h2 + .row{padding-top:8px}
+.dot{flex:0 0 9px; width:9px; height:9px; border-radius:5px; margin-top:5px;
+  background:var(--border2); transition:background .25s}
+.dot.ok{background:var(--primary)}
+.dot.bad{background:var(--deny)}
+.dot.busy{background:var(--brand-dark); animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1} 50%{opacity:.25}}
+.row .txt{flex:1; min-width:0}
+.row .t{font-size:12.5px; font-weight:700}
+.row.ok .t{color:var(--primary-dark)}
+.row .d{font-size:12px; color:var(--muted); margin-top:2px; line-height:1.5;
+  word-break:break-word}
+.row .d b{color:var(--ink2); font-weight:600}
+.row .d.path{font-family:var(--mono); font-size:10.5px; color:var(--faint)}
+.sugg{margin-top:6px; display:flex; flex-wrap:wrap; gap:4px}
+.sugg code{font-size:10.5px}
+
+/* the two steps */
+.step{display:flex; gap:13px; align-items:center; padding:15px 18px}
+.step + .step{border-top:1px solid var(--border)}
+.n{flex:0 0 24px; height:24px; border-radius:7px; background:var(--surface3);
+  color:var(--ink2); display:grid; place-items:center; font-size:11.5px;
+  font-weight:800}
+.step.done .n{background:var(--primary-soft); color:var(--primary-dark)}
+.step .txt{flex:1; min-width:0}
+.step .t{font-size:13.5px; font-weight:700}
+.step .d{font-size:12px; color:var(--muted); margin-top:2px}
+
+.act{height:34px; padding:0 15px; border-radius:9px; font-size:12.5px;
+  font-weight:700; text-decoration:none; display:inline-flex; align-items:center;
+  justify-content:center; white-space:nowrap; cursor:pointer;
+  border:1px solid var(--border2); background:var(--surface); color:var(--ink2)}
+.act:hover{background:var(--surface3)}
+.act.go{background:var(--ink); border-color:var(--ink); color:#fff}
+.act.go:hover{background:#000}
+.act.ready{background:var(--primary); border-color:var(--primary); color:#fff}
+.act.ready:hover{background:var(--primary-dark)}
+.act.wait{color:var(--muted); cursor:progress; animation:breathe 1.6s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1} 50%{opacity:.42}}
+
+.note{font-size:11.5px; color:var(--muted); text-align:center; margin-top:4px;
+  min-height:17px}
+.note a{color:var(--muted)}
+.retry{margin:0 18px 16px; font-size:11.5px}
+</style>
+</head>
+<body>
+
+<div class="launch">
+
+  <div class="hero">
+    <div class="mark" id="mark"></div>
+    <div>
+      <div class="wordmark">CastleKeep</div>
+      <div class="tagline">A local assistant that can only do what you let it.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Checking this machine</h2>
+
+    <div class="row" id="rHarness">
+      <span class="dot" id="dHarness"></span>
+      <div class="txt">
+        <div class="t">Sandbox</div>
+        <div class="d" id="tHarness">asking the host what it can enforce</div>
+        <div class="d path" id="tExe"></div>
+      </div>
+    </div>
+
+    <div class="row" id="rModel">
+      <span class="dot" id="dModel"></span>
+      <div class="txt">
+        <div class="t">Lemonade</div>
+        <div class="d" id="tModel">looking for the server</div>
+        <div class="sugg" id="tSugg"></div>
+      </div>
+    </div>
+
+    <div class="row" id="rWarm">
+      <span class="dot" id="dWarm"></span>
+      <div class="txt">
+        <div class="t">Model</div>
+        <div class="d" id="tWarm">waiting on the model check</div>
+      </div>
+    </div>
+
+    <div class="retry hidden" id="retryWrap">
+      <button class="act" id="retry">Check again</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step" id="step1">
+      <span class="n">1</span>
+      <div class="txt">
+        <div class="t">Phase 1, the terminal</div>
+        <div class="d">Drive the sandbox by hand. No agent, no model.</div>
+      </div>
+      <a class="act go" href="/phase1">Start &rarr;</a>
+    </div>
+    <div class="step" id="step2">
+      <span class="n">2</span>
+      <div class="txt">
+        <div class="t">CastleKeep</div>
+        <div class="d">The same sandbox, with an agent in front of it.</div>
+      </div>
+      <a class="act wait" id="go" href="/app">Loading</a>
+    </div>
+  </div>
+
+  <p class="note" id="note"></p>
+
+</div>
+
+<script type="module">
+import { dragonSvg } from "/dragon.js";
+
+const $ = (id) => document.getElementById(id);
+
+let dragonState = null;
+function setDragon(s) {
+  if (s === dragonState) return;
+  dragonState = s;
+  $("mark").innerHTML = dragonSvg(s);
+}
+setDragon("asleep");
+
+function esc(s) {
+  return String(s === undefined || s === null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/* Elapsed is counted from the first poll that said warming, not from the
+   server's own timestamp, so a page reloaded mid-load does not claim the
+   read only just began. */
+let warmSince = null;
+let ready = false;
+
+/* kind, not state: "state" in this file means a warm-up state the server
+   emitted, and having two of them made it easy to compare the wrong one. */
+function mark(row, kind) {        // kind: "ok" | "bad" | "busy" | ""
+  $("d" + row).className = "dot " + kind;
+  $("r" + row).className = "row" + (kind === "ok" ? " ok" : "");
+}
+
+function render(st) {
+  const probe = st.probe || {};
+  const lem = st.lemonade || {};
+  const w = st.warmup || {};
+
+  // ---- sandbox
+  if (st.mxcExe && probe.available) {
+    mark("Harness", "ok");
+    $("tHarness").textContent = "Ready on this host.";
+    $("tExe").textContent = st.mxcExe;
+  } else {
+    mark("Harness", "bad");
+    $("tHarness").textContent = st.mxcError || probe.error ||
+      "wxc-exec.exe was not found. See bin\\README.md.";
+    $("tExe").textContent = st.mxcExe || "";
+  }
+
+  // ---- lemonade
+  $("tSugg").innerHTML = "";
+  if (!lem.reachable) {
+    mark("Model", "bad");
+    $("tModel").innerHTML = "Not running. Start it with <code>lemonade-server serve</code>";
+  } else if (!lem.modelPresent) {
+    mark("Model", "bad");
+    $("tModel").innerHTML = "Running, but not serving <b>" +
+      esc(lem.model || "the configured model") + "</b>. Pick one with " +
+      "<code>python workshop\\models.py --pick NAME</code>";
+    (lem.suggestions || []).slice(0, 5).forEach((m) => {
+      const c = document.createElement("code");
+      c.textContent = m;
+      $("tSugg").appendChild(c);
+    });
+  } else {
+    mark("Model", "ok");
+    $("tModel").innerHTML = "Serving <b>" + esc(lem.model) + "</b>";
+  }
+
+  // ---- weights
+  const state = w.state;
+  ready = state === "ready";
+
+  if (ready) {
+    mark("Warm", "ok");
+    $("tWarm").innerHTML = "Loaded into memory" +
+      (w.ms ? " in <b>" + (w.ms / 1000).toFixed(1) + "s</b>." : ".");
+    setDragon("happy");
+  } else if (state === "warming") {
+    if (warmSince === null) warmSince = Date.now();
+    mark("Warm", "busy");
+    $("tWarm").innerHTML = "Loading into memory, <b>" +
+      Math.round((Date.now() - warmSince) / 1000) + "s</b>. This happens once.";
+    setDragon("thinking");
+  } else if (state === "failed") {
+    warmSince = null;
+    mark("Warm", "bad");
+    $("tWarm").textContent = w.error || "The warm-up request failed.";
+    setDragon("alert");
+  } else {
+    warmSince = null;
+    mark("Warm", "");
+    $("tWarm").textContent = "Nothing to load yet.";
+    setDragon("asleep");
+  }
+
+  // ---- step 2
+  const go = $("go");
+  const blocked = !lem.reachable || !lem.modelPresent || state === "failed";
+  $("retryWrap").classList.toggle("hidden", !blocked);
+  $("step2").className = "step" + (ready ? " done" : "");
+
+  if (ready) {
+    go.className = "act ready";
+    go.textContent = "Open →";
+    $("note").innerHTML = "";
+  } else if (blocked) {
+    go.className = "act";
+    go.textContent = "Open anyway";
+    $("note").textContent = "The policy and sandbox tabs work without a model.";
+  } else {
+    go.className = "act wait";
+    go.textContent = "Loading";
+    $("note").innerHTML = 'In a hurry? <a href="/app">Go in now</a>, the first ' +
+      'answer will just be slow.';
+  }
+}
+
+async function poll() {
+  try {
+    render(await (await fetch("/api/state")).json());
+  } catch (e) {
+    mark("Harness", "bad");
+    $("tHarness").textContent =
+      "The CastleKeep server stopped answering. Is run.py still running?";
+  }
+}
+
+$("retry").addEventListener("click", async () => {
+  const b = $("retry");
+  b.disabled = true;
+  b.textContent = "Checking";
+  warmSince = null;
+  try { await fetch("/api/warmup", { method: "POST" }); } catch (e) { /* poll reports it */ }
+  b.disabled = false;
+  b.textContent = "Check again";
+  poll();
+});
+
+/* Going in before the weights are resident is allowed, but it happens through
+   the link in the note, not by clicking a button that says Loading. */
+$("go").addEventListener("click", (e) => {
+  if ($("go").classList.contains("wait")) e.preventDefault();
+});
+
+poll();
+setInterval(poll, 1200);
+</script>
+</body>
+</html>

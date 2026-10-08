@@ -1,0 +1,36 @@
+{
+  "version": "0.8.0-alpha",
+  "containment": "processcontainer",
+  "process": {
+    "commandLine": "\"C:\\Windows\\System32\\curl.exe\" -sS --max-time 10 https://example.com",
+    "timeout": 30000
+  },
+  "ui": {
+    "disable": true,
+    "clipboard": "none",
+    "injection": false
+  },
+  "lifecycle": {
+    "destroyOnExit": true
+  },
+  "filesystem": {
+    "readonlyPaths": [
+      "C:\\Windows\\System32"
+    ]
+  },
+  "network": {
+    "egress": {
+      "default": "allow"
+    },
+    "ingress": {
+      "default": "deny",
+      "hostLoopback": "deny"
+    }
+  },
+  "processContainer": {
+    "learningMode": true
+  },
+  "fallback": {
+    "allowDaclMutation": true
+  }
+}

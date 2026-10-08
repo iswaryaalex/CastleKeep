@@ -1,0 +1,4 @@
+ask about disk space
+ask what is eating memory
+try to read something outside the grants
+turn the network back on and fetch a url

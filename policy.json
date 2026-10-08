@@ -1,0 +1,62 @@
+{
+  "_readme": [
+    "This file is the whole point. Edit it, save, and the NEXT tool call the agent makes",
+    "runs under the new rules. Nothing is cached, nothing is reloaded - each tool call",
+    "spawns a fresh one-shot sandbox built from whatever is in this file at that moment.",
+    "",
+    "You can edit it here in a text editor, or from the Policy tab in the CastleKeep UI.",
+    "Both write the same file.",
+    "",
+    "Path variables you can use:  ${workspace} ${project} ${home} ${windir} ${system32}",
+    "                             ${temp} ${programfiles} ${localappdata}",
+    "",
+    "Every field below maps to a real field in the MXC wire schema. See COMPILED.md,",
+    "or hit the 'Show the JSON that MXC actually receives' button in the Policy tab."
+  ],
+  "name": "diagnostics",
+  "description": "Read-only device check-up. The agent can look around and read, but cannot write outside its workspace and has no network at all.",
+  "containment": "processcontainer",
+  "paths": {
+    "_note": "Grant the least you can. ${windir}\\System32 is what cmd.exe, powershell.exe and curl.exe themselves live in - take it away and the sandbox cannot even start the tool. Resist adding ${project} or ${home} here: a broad grant does not announce itself, it just quietly makes every refusal you were counting on stop happening.",
+    "read": [
+      "${windir}\\System32"
+    ],
+    "write": [
+      "${workspace}"
+    ],
+    "deny": []
+  },
+  "network": {
+    "_note": "outbound: 'deny' | 'allow'. Per-host rules are NOT supported on Windows by this binary - it is all or nothing. The model itself runs on the host and never crosses this boundary.",
+    "outbound": "allow",
+    "localNetwork": false
+  },
+  "ui": {
+    "_note": "What the sandboxed process may do to your desktop.",
+    "allowWindows": true,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+  "limits": {
+    "timeoutMs": 30000
+  },
+  "advanced": {
+    "_note": "leastPrivilege is not representable at the BaseContainer tier and will push the run down to AppContainer. learningMode logs denied access to diagnostics without allowing it. captureDenials writes a JSON receipt of everything that was refused - it needs host support and may be unavailable; CastleKeep will tell you rather than pretend.",
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+  "tools": {
+    "_note": "Turn individual tools off entirely. This is a HOST-side gate - it stops the tool before it ever reaches a sandbox. Leave these on to watch MXC do the refusing instead; that is the honest demo.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}

@@ -1,0 +1,5 @@
+Strix Halo bring-up
+
+- NPU driver installed, reports 50 TOPS
+- Lemonade serving Qwen3.6-35B-A3B at ~40 tok/s
+- wxc-exec present, tier not yet confirmed - run verify.py

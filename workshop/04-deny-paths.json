@@ -1,0 +1,40 @@
+{
+  "version": "0.8.0-alpha",
+  "containment": "processcontainer",
+  "process": {
+    "commandLine": "\"C:\\Windows\\System32\\cmd.exe\" /d /c echo this run will not start",
+    "timeout": 30000
+  },
+  "ui": {
+    "disable": true,
+    "clipboard": "none",
+    "injection": false
+  },
+  "lifecycle": {
+    "destroyOnExit": true
+  },
+  "filesystem": {
+    "readonlyPaths": [
+      "C:\\Windows\\System32",
+      "C:\\CastleKeepLab\\public"
+    ],
+    "deniedPaths": [
+      "C:\\CastleKeepLab\\private"
+    ]
+  },
+  "network": {
+    "egress": {
+      "default": "deny"
+    },
+    "ingress": {
+      "default": "deny",
+      "hostLoopback": "deny"
+    }
+  },
+  "processContainer": {
+    "learningMode": true
+  },
+  "fallback": {
+    "allowDaclMutation": true
+  }
+}

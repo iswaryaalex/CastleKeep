@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CastleKeep</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
+</head>
+<body>
+
+<header class="titlebar">
+  <a class="brand" href="/" title="Back to the launch screen"
+     style="text-decoration:none; color:inherit">
+    <span class="avatar" id="brandDragon"></span>
+    <span class="brand-name">CastleKeep</span>
+    <span class="brand-sub">local assistant</span>
+  </a>
+  <div class="titlebar-right">
+    <span class="chip" id="tierChip" title="Reported by wxc-exec --probe on this machine">checking the host&hellip;</span>
+    <span class="chip" id="modelChip">model&hellip;</span>
+    <a class="chip plain" href="/phase1" title="The terminal walkthrough: drive the sandbox by hand"
+       style="text-decoration:none">&larr; Phase 1</a>
+  </div>
+</header>
+
+<div class="shell">
+
+  <nav class="rail">
+    <div class="rail-label">Workspace</div>
+    <div class="rail-chip" id="hostChip">&hellip;</div>
+    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Assistant</button>
+    <button class="nav" data-tab="control"><i data-ic="panel"></i>Control Panel</button>
+    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Policy</button>
+    <button class="nav" data-tab="run"><i data-ic="terminal"></i>Run</button>
+    <button class="nav" data-tab="settings"><i data-ic="gear"></i>Settings</button>
+    <div class="rail-foot">
+      <div class="rail-label">This turn</div>
+      <div class="rail-stat"><span id="statCalls">0</span><em>sandboxes spawned</em></div>
+      <div class="rail-stat"><span id="statRefused" class="deny">0</span><em>refused</em></div>
+    </div>
+  </nav>
+
+  <!-- ============================ ASSISTANT ============================ -->
+  <main class="tab" id="tab-assistant">
+    <div class="split">
+      <section class="pane chat-pane">
+        <div class="pane-head">
+          <span class="avatar sm" id="chatDragon"></span>
+          <div>
+            <h1>Assistant</h1>
+            <p class="sub">Runs on this machine. Nothing you type leaves it.</p>
+          </div>
+          <button class="btn ghost right" id="clearChat">New conversation</button>
+        </div>
+        <div class="transcript" id="transcript">
+          <div class="empty">
+            <span class="avatar lg" id="emptyDragon"></span>
+            <h2>Ask about this device.</h2>
+            <p>Assistant can look around inside a sandbox you control. Every tool call
+               runs in a throwaway container built from <code>policy.json</code>
+               as it is at that instant.</p>
+            <div class="starters">
+              <button class="starter">Give this machine a quick check-up.</button>
+              <button class="starter">How much disk space is left, and what is eating it?</button>
+              <button class="starter">Try to read a file you are not allowed to read, so I can see what happens.</button>
+              <button class="starter">Can you reach the internet from inside the sandbox?</button>
+            </div>
+          </div>
+        </div>
+        <form class="composer" id="composer">
+          <textarea id="input" rows="1" placeholder="Ask Assistant something about this device&hellip;"></textarea>
+          <button class="btn primary" id="send" type="submit">Send</button>
+          <button class="btn danger hidden" id="stop" type="button">Stop</button>
+        </form>
+      </section>
+
+      <aside class="pane side">
+        <div class="pane-head"><h1>Mission</h1></div>
+        <div class="scroll" id="missionScroll">
+          <div class="card">
+            <div class="card-title">In force right now</div>
+            <div id="missionPolicy" class="mini"></div>
+            <button class="btn ghost full" data-goto="policy">Change the policy</button>
+          </div>
+          <div class="card">
+            <div class="card-title">Sandbox activity</div>
+            <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- ========================== CONTROL PANEL ========================== -->
+  <main class="tab" id="tab-control">
+    <div class="scroll pad">
+      <h1 class="page">Control Panel</h1>
+      <p class="page-sub">Everything CastleKeep knows about this machine, and
+         everything it has done since it started.</p>
+
+      <div class="tiles" id="tiles"></div>
+
+      <div class="card">
+        <div class="card-title">Refused</div>
+        <p class="card-sub">The useful column is <em>who</em> refused. A host
+           gate means the request never reached a sandbox. A policy block means
+           the sandbox started and Windows said no. A refusal to start means MXC
+           would not build a weaker container than you asked for.</p>
+        <div id="refusedFeed" class="feed"><p class="muted">Nothing refused yet.</p></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Every sandbox run</div>
+        <table class="runs" id="runsTable">
+          <thead><tr><th>#</th><th>Tool</th><th>Outcome</th><th>Took</th><th>Command</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="two">
+        <div class="card">
+          <div class="card-title">Reachable from inside</div>
+          <div id="pathsCard" class="mini"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">What this host can enforce</div>
+          <div id="capsCard" class="mini"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Tools</div>
+        <div id="toolsCard" class="toolgrid"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================= POLICY ============================== -->
+  <main class="tab" id="tab-policy">
+    <div class="split">
+      <section class="pane">
+        <div class="pane-head">
+          <div>
+            <h1>Policy</h1>
+            <p class="sub">Fixed the moment a sandbox starts. An edit here
+               reaches the next tool call, never one already running.</p>
+          </div>
+          <div class="right">
+            <button class="btn ghost" id="revertPolicy">Revert</button>
+            <button class="btn primary" id="savePolicy">Save</button>
+          </div>
+        </div>
+        <div class="scroll pad" id="policyForm"></div>
+      </section>
+      <aside class="pane side">
+        <div class="pane-head">
+          <h1>What MXC receives</h1>
+          <button class="btn ghost right" id="dryRun">Dry-run it</button>
+        </div>
+        <div class="scroll">
+          <div id="lintBox"></div>
+          <pre class="json" id="policyJson"></pre>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- =============================== RUN =============================== -->
+  <main class="tab" id="tab-run">
+    <div class="split">
+      <section class="pane">
+        <div class="pane-head"><h1>Run</h1></div>
+        <div class="scroll pad">
+          <div class="card">
+            <div class="card-title">Prove it on this machine</div>
+            <p class="card-sub">Probes the host, dry-runs every policy shape,
+               then really spawns sandboxes and tries to do things it should not
+               be allowed to do. Writes <code>VERIFY-REPORT.md</code> next to
+               <code>run.py</code>.</p>
+            <button class="btn primary" id="runVerify">Run the full check</button>
+            <div id="verifySteps" class="steps"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Run one tool by hand</div>
+            <p class="card-sub">Same path the model uses. Same sandbox, same policy.</p>
+            <div class="toolrunner">
+              <select id="toolPick"></select>
+              <div id="toolArgs" class="toolargs"></div>
+              <button class="btn coral" id="toolGo">Run it in a sandbox</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Starting from scratch</div>
+            <ol class="steps-num" id="setupSteps"></ol>
+          </div>
+        </div>
+      </section>
+      <aside class="pane side term-pane">
+        <div class="pane-head">
+          <h1>Terminal</h1>
+          <button class="btn ghost right" id="clearTerm">Clear</button>
+        </div>
+        <pre class="term" id="term"></pre>
+      </aside>
+    </div>
+  </main>
+
+  <!-- ============================ SETTINGS ============================= -->
+  <main class="tab" id="tab-settings">
+    <div class="scroll pad">
+      <h1 class="page">Settings</h1>
+      <p class="page-sub">These live in <code>config.json</code>. Change the file
+         and restart, or hit re-scan after you start Lemonade.</p>
+      <div class="two">
+        <div class="card">
+          <div class="card-title">Model</div>
+          <div id="modelCard" class="mini"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Executor</div>
+          <div id="exeCard" class="mini"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Startup notes</div>
+        <div id="notesCard" class="feed"></div>
+        <button class="btn primary" id="rescan">Re-scan the host</button>
+      </div>
+      <div class="card">
+        <div class="card-title">How this is put together</div>
+        <div class="prose" id="aboutCard"></div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

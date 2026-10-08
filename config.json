@@ -1,0 +1,28 @@
+{
+  "_readme": "Machine setup. Change these once, then forget them. policy.json is the file you actually play with.",
+  "mxc": {
+    "_note": "binDir is the folder that contains <arch>\\wxc-exec.exe. The shipped value is the copy of the MXC executables that travels with CastleKeep, in bin\\ - see bin\\README.md. Point it elsewhere, or set exePath, if you want a different build. MXC_BIN_DIR also works.",
+    "binDir": "bin",
+    "exePath": null,
+    "debug": false,
+    "logDir": null
+  },
+  "lemonade": {
+    "_note": "Lemonade Server runs on the HOST and is never sandboxed. The agent loop talks to it directly. baseUrl is probed for both /api/v1 and /v1 style routes.",
+    "baseUrl": "http://127.0.0.1:13305",
+    "_model_note": "Must match a model Lemonade has INSTALLED, exactly. /api/v1/models is the installed list; ?show_all=true is the catalogue, and a name can be in the catalogue and still 404 because nobody pulled it. Use workshop\\models.py rather than typing a name from memory.",
+    "model": "Qwen3.6-35B-A3B-GGUF",
+    "temperature": 0.3,
+    "maxTokens": 1536,
+    "toolCallMode": "auto",
+    "requestTimeoutSec": 300
+  },
+  "agent": {
+    "maxToolCallsPerTurn": 8,
+    "workspace": "workspace"
+  },
+  "ui": {
+    "port": 7701,
+    "openBrowser": true
+  }
+}
