@@ -19,8 +19,9 @@ import time
 from . import policy as policy_mod
 from . import tools as tools_mod
 
-SYSTEM = """You are Assistant, the agent inside CastleKeep. You help the person \
-in front of you understand and fix their own Windows device.
+SYSTEM = """You are {name}, the agent inside CastleKeep. The person in front of \
+you chose that name for you, so answer to it. You help them understand and fix \
+their own Windows device.
 
 How you work:
 - You run entirely on this machine. The model is served locally by Lemonade. \
@@ -141,7 +142,11 @@ class Agent:
         pol = app.reload_policy()
         schemas = tools_mod.schemas(pol)
 
-        messages = [{"role": "system", "content": SYSTEM + _policy_briefing(pol, app)}]
+        # .replace rather than .format, because the prompt below it is edited
+        # often and one stray brace in an example would turn a text edit into
+        # a KeyError at chat time.
+        system = SYSTEM.replace("{name}", app.assistant_name())
+        messages = [{"role": "system", "content": system + _policy_briefing(pol, app)}]
         messages += history
         messages.append({"role": "user", "content": user_text})
 

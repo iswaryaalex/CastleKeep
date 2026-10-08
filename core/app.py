@@ -4,6 +4,7 @@ core/app.py - shared state. One of these per process.
 
 import json
 import os
+import platform
 import threading
 import time
 
@@ -11,6 +12,42 @@ from . import policy as policy_mod
 from . import tools as tools_mod
 from .lemonade import Lemonade
 from .mxc import Mxc
+
+# What the dragon is called before anyone has named it. The launch wizard
+# offers this as the pre-filled suggestion, so most people keep it.
+DEFAULT_ASSISTANT_NAME = "Max"
+
+# Backdrop ids the launch page knows how to draw. Kept here as well as in the
+# page so a typo in a hand-edited config.json comes back as "none" instead of
+# an unstyled grey panel nobody can explain.
+BACKDROP_IDS = ("none", "parchment", "stone", "hills")
+
+# A deny list rather than an allow list, so that Jose, Bjorn and a name in
+# Chinese all survive. The pages render the name through textContent and the
+# wire format is JSON, so the only characters worth removing are the ones that
+# would be ambiguous if either of those assumptions ever slipped.
+_NAME_DROP = set("<>&\"\\{}")
+_NAME_SPACE = set(chr(c) for c in range(0, 32)) | {chr(127)}
+
+
+def _clean_name(value):
+    """Trim a proposed assistant name down to something safe to print.
+
+    It lands in the window titlebar, in the chat transcript and in the model's
+    system prompt, so it is cleaned once here rather than escaped at each of
+    those three sites. Returns "" for anything unusable, and the caller decides
+    whether that is an error or just means "not named yet".
+    """
+    if not isinstance(value, str):
+        return ""
+    s = "".join(" " if c in _NAME_SPACE else ("" if c in _NAME_DROP else c)
+                for c in value)
+    return " ".join(s.split())[:24].strip(" -'.")
+
+
+def _clean_backdrop(value):
+    v = (value or "none")
+    return v if v in BACKDROP_IDS else "none"
 
 
 class App:
@@ -49,6 +86,78 @@ class App:
 
     def path_ctx(self):
         return policy_mod.path_context(self.project_dir, self.workspace)
+
+    def host_info(self):
+        """The processor name and installed memory, for the one line on the
+        launch page that says which machine this is.
+
+        Asked of Windows rather than written into config.json, because the
+        entire point of that line is to show the person their own box. On a
+        Ryzen AI machine this comes back as the real part number, which is
+        the claim the workshop wants to make and the claim it should not be
+        allowed to make on a box that is not one.
+        """
+        cached = getattr(self, "_host_info", None)
+        if cached is not None:
+            return cached
+
+        info = {"cpu": None, "memoryGB": None, "arch": platform.machine() or None}
+        try:
+            import winreg
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+            try:
+                name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+                info["cpu"] = " ".join(str(name).split()) or None
+            finally:
+                winreg.CloseKey(key)
+        except Exception:
+            pass
+
+        try:
+            import ctypes
+
+            class _MemStatus(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+            st = _MemStatus()
+            st.dwLength = ctypes.sizeof(_MemStatus)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+                # Round to the nearest 4 GB. The installed figure is what the
+                # box was sold with; the exact byte count is a few hundred MB
+                # short of it because firmware has already taken its cut, and
+                # "127 GB" on a 128 GB machine reads like a fault.
+                gb = st.ullTotalPhys / float(1024 ** 3)
+                info["memoryGB"] = int(round(gb / 4.0) * 4) or int(round(gb))
+        except Exception:
+            pass
+
+        self._host_info = info
+        return info
+
+    def workspace_count(self):
+        """How many files sit in the workspace, for the launch page's fourth
+        readiness row. Shallow and best-effort: this is a sentence on a status
+        line, not an inventory, and it must not stall the poll."""
+        try:
+            n = 0
+            for entry in os.scandir(self.workspace):
+                if entry.is_file():
+                    n += 1
+                    if n >= 999:
+                        break
+            return n
+        except OSError:
+            return None
 
     # -- config -----------------------------------------------------------
 
@@ -105,6 +214,69 @@ class App:
             self.note("info", "Now pointing at %s. Loading it." % h.get("model"))
             self.start_warmup()
         return True
+
+    # -- setup ------------------------------------------------------------
+
+    def setup(self):
+        """The two answers the launch wizard collects, read back from disk.
+
+        Read straight out of config.json rather than from a side file, so a
+        hand edit is as good as a trip through the wizard and there is only
+        one place to look when the name on screen is wrong.
+        """
+        agent = self.cfg.get("agent") or {}
+        ui = self.cfg.get("ui") or {}
+        name = _clean_name(agent.get("assistantName"))
+        return {
+            "assistantName": name or DEFAULT_ASSISTANT_NAME,
+            "backdrop": _clean_backdrop(ui.get("backdrop")),
+            # The resume signal. No name on disk means nobody has been through
+            # the wizard on this machine, so it opens at the welcome; once a
+            # name is saved it opens at the readiness checks instead, because
+            # that is the only step worth repeating.
+            "named": bool(name),
+        }
+
+    def assistant_name(self):
+        return self.setup()["assistantName"]
+
+    def save_setup(self, name=None, backdrop=None):
+        """Write the wizard's answers into config.json.
+
+        Read-modify-write of the whole file, not a targeted patch: config.json
+        is hand-edited too, and the _note keys in it are real keys that have to
+        survive the round trip. Only the two leaves we own are touched, so the
+        lemonade subtree comes back byte-identical and reload_config() stays
+        quiet - saving a name must not tear down the Lemonade client or throw
+        away a warm model.
+        """
+        try:
+            cfg = _load_json(self.config_path)
+        except Exception:
+            cfg = dict(self.cfg or {})
+
+        if name is not None:
+            cleaned = _clean_name(name)
+            if not cleaned:
+                raise ValueError("A name is needed - up to 24 characters, "
+                                 "and not only punctuation.")
+            cfg.setdefault("agent", {})["assistantName"] = cleaned
+        if backdrop is not None:
+            cfg.setdefault("ui", {})["backdrop"] = _clean_backdrop(backdrop)
+
+        tmp = self.config_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, self.config_path)
+
+        # Adopt the new copy here rather than letting the next poll find it.
+        # Otherwise the mtime changes, reload_config() re-reads, finds the
+        # lemonade subtree unchanged and returns False - correct, but it would
+        # have re-read the file for nothing.
+        self.cfg = cfg
+        self._config_mtime = _mtime(self.config_path)
+        return self.setup()
 
     # -- policy -----------------------------------------------------------
 

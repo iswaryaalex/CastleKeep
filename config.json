@@ -19,10 +19,12 @@
   },
   "agent": {
     "maxToolCallsPerTurn": 8,
-    "workspace": "workspace"
+    "workspace": "workspace",
+    "assistantName": "Keeper"
   },
   "ui": {
     "port": 7701,
-    "openBrowser": true
+    "openBrowser": true,
+    "backdrop": "hills"
   }
 }

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CastleKeep</title>
+<link rel="stylesheet" href="/tokens.css">
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
 </head>
@@ -14,7 +15,7 @@
      style="text-decoration:none; color:inherit">
     <span class="avatar" id="brandDragon"></span>
     <span class="brand-name">CastleKeep</span>
-    <span class="brand-sub">local assistant</span>
+    <span class="brand-sub" data-who>local assistant</span>
   </a>
   <div class="titlebar-right">
     <span class="chip" id="tierChip" title="Reported by wxc-exec --probe on this machine">checking the host&hellip;</span>
@@ -29,7 +30,7 @@
   <nav class="rail">
     <div class="rail-label">Workspace</div>
     <div class="rail-chip" id="hostChip">&hellip;</div>
-    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Assistant</button>
+    <button class="nav" data-tab="assistant"><i data-ic="chat"></i><span data-who>Assistant</span></button>
     <button class="nav" data-tab="control"><i data-ic="panel"></i>Control Panel</button>
     <button class="nav" data-tab="policy"><i data-ic="shield"></i>Policy</button>
     <button class="nav" data-tab="run"><i data-ic="terminal"></i>Run</button>
@@ -48,7 +49,7 @@
         <div class="pane-head">
           <span class="avatar sm" id="chatDragon"></span>
           <div>
-            <h1>Assistant</h1>
+            <h1 data-who>Assistant</h1>
             <p class="sub">Runs on this machine. Nothing you type leaves it.</p>
           </div>
           <button class="btn ghost right" id="clearChat">New conversation</button>
@@ -57,7 +58,7 @@
           <div class="empty">
             <span class="avatar lg" id="emptyDragon"></span>
             <h2>Ask about this device.</h2>
-            <p>Assistant can look around inside a sandbox you control. Every tool call
+            <p><span data-who>Assistant</span> can look around inside a sandbox you control. Every tool call
                runs in a throwaway container built from <code>policy.json</code>
                as it is at that instant.</p>
             <div class="starters">
@@ -69,7 +70,8 @@
           </div>
         </div>
         <form class="composer" id="composer">
-          <textarea id="input" rows="1" placeholder="Ask Assistant something about this device&hellip;"></textarea>
+          <textarea id="input" rows="1" data-who-placeholder
+            placeholder="Ask Assistant something about this device&hellip;"></textarea>
           <button class="btn primary" id="send" type="submit">Send</button>
           <button class="btn danger hidden" id="stop" type="button">Stop</button>
         </form>

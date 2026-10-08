@@ -31,6 +31,27 @@ const S = {
 };
 
 /* ====================================================================== */
+/* the name                                                                */
+/* ====================================================================== */
+
+/* Whatever the person called their assistant on the launch screen. It is one
+ * value, read from /api/state like everything else, and it has to be the same
+ * word in the titlebar, in the rail, on the transcript and in the system
+ * prompt - an assistant that is called Scout on screen and answers to
+ * "Assistant" has undone the one thing naming it was for. */
+function who() {
+  return ((S.state || {}).setup || {}).assistantName || "Assistant";
+}
+
+function paintName() {
+  const name = who();
+  document.querySelectorAll("[data-who]").forEach((n) => (n.textContent = name));
+  document.querySelectorAll("[data-who-placeholder]").forEach(
+    (n) => (n.placeholder = "Ask " + name + " something about this device\u2026"));
+  document.title = "CastleKeep - " + name;
+}
+
+/* ====================================================================== */
 /* dragon                                                                  */
 /* ====================================================================== */
 
@@ -129,6 +150,7 @@ async function hydrate() {
   const st = await getJSON("/api/state");
   S.state = st;
   if (!S.dirty) S.policy = JSON.parse(JSON.stringify(st.policy));
+  paintName();
   renderChrome();
   renderMission();
   renderControl();
@@ -315,7 +337,8 @@ function renderControl() {
   const feed = $("refusedFeed");
   feed.innerHTML = "";
   if (!refused.length) {
-    feed.appendChild(el("p", "muted", "Nothing refused yet. Ask Assistant to read something outside the granted paths."));
+    feed.appendChild(el("p", "muted", "Nothing refused yet. Ask " + who() +
+      " to read something outside the granted paths."));
   } else {
     for (const r of refused) {
       const item = el("div", "item " + (r.outcome || ""));
@@ -448,7 +471,7 @@ function msgNode(role) {
     wrap.appendChild(who);
   }
   const body = el("div", "body");
-  if (role === "assistant") body.appendChild(el("div", "name", "Assistant"));
+  if (role === "assistant") body.appendChild(el("div", "name", who()));
   wrap.appendChild(body);
   $("transcript").appendChild(wrap);
   return body;
@@ -935,7 +958,8 @@ function renderRunTab() {
     ["Start the model.",
      "lemonade-server serve",
      "CastleKeep expects it at " + ((st.lemonade || {}).baseUrl || "") +
-     ". Load " + ((st.lemonade || {}).model || "the model") + " before you ask Assistant anything."],
+     ". Load " + ((st.lemonade || {}).model || "the model") +
+     " before you ask " + who() + " anything."],
     ["Check what this machine can actually enforce.",
      "python verify.py",
      "Writes VERIFY-REPORT.md. Until the negative tests pass, do not describe this setup as contained."],

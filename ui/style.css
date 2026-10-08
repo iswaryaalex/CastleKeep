@@ -1,31 +1,7 @@
-/* CastleKeep - lemonade-server's family, dialled down.
-   One light warm shade carries the whole app. The brand yellow appears in
-   small doses only: a selected tab, a mascot tile, the favicon. Saturated
-   yellow across large areas reads as a toy, and this app is making an
-   argument people have to believe. Green stays reserved for "this worked",
-   so --primary never doubles as both brand and allowed. */
-
-:root{
-  color-scheme: light;
-  --bg:#FAF8F1; --surface:#FFFFFF; --surface2:#FCFBF6; --surface3:#F2EFE5;
-  --border:#E7E2D4; --border2:#D4CEBD;
-  --ink:#23201A; --ink2:#484337; --muted:#7A7466; --faint:#A9A391;
-  /* brand - used sparingly. --brand itself is for 1-3px accents only. */
-  --brand:#F5CE3E; --brand-dark:#D9B421; --brand-soft:#FBF3D7;
-  --brand-line:#EADFB4; --brand-ink:#5C4B00;
-  /* primary - "this worked". lemonade-server's own --tertiary green. */
-  --primary:#3C6531; --primary-dark:#2B4A23; --primary-soft:#E9F1E3; --primary-line:#C4D8B9;
-  --coral:#E8795A; --coral-soft:#FDEDE7; --coral-line:#F5C9BA;
-  --deny:#BE3A2B; --deny-soft:#FBE9E5; --deny-line:#F0C3BB;
-  --warn:#A1560A; --warn-soft:#FBEBD8; --warn-line:#EFD0AC;
-  --info:#2F6FA8; --info-soft:#E9F1F8; --info-line:#C3D9EC;
-  --term-bg:#1A1813; --term-bg2:#24211A; --term-fg:#F2EFE5; --term-dim:#8C856F;
-  --term-green:#A8D183; --term-coral:#F08E6E; --term-gold:#FCD846; --term-blue:#8FBCE8;
-  --sans:"Segoe UI Variable Text","Segoe UI",Lato,system-ui,sans-serif;
-  --mono:"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
-  --rail:232px; --titlebar:46px;
-  --shadow:0 1px 2px rgba(60,48,0,.05), 0 6px 18px rgba(60,48,0,.05);
-}
+/* CastleKeep - the app shell.
+   The palette lives in tokens.css, which every page links first. This file is
+   the rail-and-pane layout and the widgets inside it; the launch screen does
+   not use it. */
 
 *{box-sizing:border-box}
 html,body{height:100%}

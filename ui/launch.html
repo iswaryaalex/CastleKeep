@@ -4,290 +4,709 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CastleKeep</title>
-<link rel="stylesheet" href="/style.css">
+<!-- Palette only. style.css is the app shell's layout and nothing on this
+     page wants it: the launch screen is one centred card, not a rail and a
+     pane, and sharing the widget rules means a .chip here quietly inherits
+     the status dot meant for a chip there. -->
+<link rel="stylesheet" href="/tokens.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
 <style>
-body{overflow:auto; display:grid; place-items:center; min-height:100vh;
-  background:var(--bg); padding:48px 20px}
+/* Drop EBGaramond-Regular.woff2 and EBGaramond-SemiBold.woff2 into ui/fonts/
+   and these take effect. No link to a font CDN on purpose: this page is plain
+   http on loopback and the machine it runs on may have no internet at all. If
+   the files are absent the stack below falls through to a system Garamond and
+   then to Georgia, which is why no layout depends on the exact metrics. */
+@font-face{font-family:"EB Garamond"; src:url("/fonts/EBGaramond-Regular.woff2") format("woff2");
+  font-weight:400; font-style:normal; font-display:swap}
+@font-face{font-family:"EB Garamond"; src:url("/fonts/EBGaramond-SemiBold.woff2") format("woff2");
+  font-weight:600; font-style:normal; font-display:swap}
 
-.launch{width:100%; max-width:520px}
+*{box-sizing:border-box}
+html{height:100%}
+body{
+  margin:0; overflow:auto; display:grid; place-items:center; min-height:100vh;
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  padding:20px 24px 44px;
+}
+h2{margin:0}
+p{margin:0}
+button{font:inherit}
+/* Only lock scrolling when the panel is certain to fit. Below this the checks
+   step is taller than the viewport and a locked body would hide the buttons. */
+@media (min-height:800px){ body{height:100%; overflow:hidden} }
 
-.hero{display:flex; align-items:center; gap:14px; margin-bottom:24px}
-.mark{width:52px; height:52px; border-radius:14px; display:grid;
-  place-items:center; background:var(--brand-soft);
-  border:1px solid var(--brand-line); flex:0 0 52px}
-.mark svg{width:42px; height:42px}
-.wordmark{font-size:22px; font-weight:800; letter-spacing:-.02em; line-height:1.2}
-.tagline{color:var(--muted); font-size:12.5px; margin-top:3px}
+#backdrop{
+  position:fixed; inset:0; z-index:0; background-repeat:repeat; background-position:center;
+  opacity:0; transition:opacity .45s ease; pointer-events:none;
+}
+#backdrop.on{opacity:1}
+/* A flat wash, not a gradient: the backdrops are already pale and this only
+   needs to keep body text off the busiest part of the tile. */
+#backdrop::after{content:""; position:absolute; inset:0; background:rgba(250,248,241,.30)}
 
-.card{background:var(--surface); border:1px solid var(--border);
-  border-radius:12px; box-shadow:var(--shadow); margin-bottom:14px}
-.card h2{font-size:10px; font-weight:800; letter-spacing:.09em;
-  text-transform:uppercase; color:var(--faint); padding:14px 18px 2px}
+/* ------------------------------------------------------------- the panel */
+.panel{
+  position:relative; z-index:1; width:100%; max-width:560px;
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:0 1px 2px rgba(27,26,22,.04), 0 10px 34px rgba(27,26,22,.055);
+  padding:30px 34px 24px; display:flex; flex-direction:column;
+}
 
-.row{display:flex; gap:12px; align-items:flex-start; padding:11px 18px}
-.row + .row{border-top:1px solid var(--border)}
-.card h2 + .row{padding-top:8px}
-.dot{flex:0 0 9px; width:9px; height:9px; border-radius:5px; margin-top:5px;
-  background:var(--border2); transition:background .25s}
-.dot.ok{background:var(--primary)}
-.dot.bad{background:var(--deny)}
-.dot.busy{background:var(--brand-dark); animation:blink 1.2s ease-in-out infinite}
-@keyframes blink{0%,100%{opacity:1} 50%{opacity:.25}}
-.row .txt{flex:1; min-width:0}
-.row .t{font-size:12.5px; font-weight:700}
-.row.ok .t{color:var(--primary-dark)}
-.row .d{font-size:12px; color:var(--muted); margin-top:2px; line-height:1.5;
-  word-break:break-word}
-.row .d b{color:var(--ink2); font-weight:600}
-.row .d.path{font-family:var(--mono); font-size:10.5px; color:var(--faint)}
-.sugg{margin-top:6px; display:flex; flex-wrap:wrap; gap:4px}
-.sugg code{font-size:10.5px}
+/* ------------------------------------------------------------- the dragon */
+.stage{display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:4px}
+.tile{
+  width:92px; height:92px; border-radius:18px;
+  background:var(--brand-soft); border:1px solid var(--brand-line);
+  display:flex; align-items:center; justify-content:center;
+  transition:width .32s ease, height .32s ease, border-radius .32s ease;
+}
+/* The checks step is the tall one, so the dragon gives up some room for it. */
+.panel.compact .tile{width:62px; height:62px; border-radius:14px}
+.tile svg{display:block; width:78%; height:78%; image-rendering:pixelated; overflow:visible}
+.who{font-family:var(--serif); font-size:15px; color:var(--faint); min-height:21px}
+.who b{color:var(--muted); font-weight:600}
 
-/* the two steps */
-.step{display:flex; gap:13px; align-items:center; padding:15px 18px}
-.step + .step{border-top:1px solid var(--border)}
-.n{flex:0 0 24px; height:24px; border-radius:7px; background:var(--surface3);
-  color:var(--ink2); display:grid; place-items:center; font-size:11.5px;
-  font-weight:800}
-.step.done .n{background:var(--primary-soft); color:var(--primary-dark)}
-.step .txt{flex:1; min-width:0}
-.step .t{font-size:13.5px; font-weight:700}
-.step .d{font-size:12px; color:var(--muted); margin-top:2px}
+/* The right wing swings about the point where it meets the body. steps(1,end)
+   keeps it a two-frame flap, because pixel art that tweens stops looking like
+   pixel art halfway through the first frame. */
+.d-wing{transform-box:view-box; transform-origin:15px 15.5px; transform:rotate(0deg)}
+.waving .d-wing{animation:wave .5s steps(1,end) infinite alternate}
+@keyframes wave{ from{transform:rotate(-5deg)} to{transform:rotate(-30deg)} }
+/* Two real frames, not a fade: .d-shut draws the same cells from the sleeping
+   sprite, so the face never has a hole in it mid-blink. */
+.d-shut{opacity:0}
+.d-open{animation:eyeopen 5.4s steps(1,end) infinite}
+.d-shut{animation:eyeshut 5.4s steps(1,end) infinite}
+@keyframes eyeopen{0%,95%{opacity:1} 95.5%,98%{opacity:0} 98.5%,100%{opacity:1}}
+@keyframes eyeshut{0%,95%{opacity:0} 95.5%,98%{opacity:1} 98.5%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  .waving .d-wing, .d-open, .d-shut{animation:none}
+  .d-shut{opacity:0}
+}
 
-.act{height:34px; padding:0 15px; border-radius:9px; font-size:12.5px;
-  font-weight:700; text-decoration:none; display:inline-flex; align-items:center;
-  justify-content:center; white-space:nowrap; cursor:pointer;
-  border:1px solid var(--border2); background:var(--surface); color:var(--ink2)}
-.act:hover{background:var(--surface3)}
-.act.go{background:var(--ink); border-color:var(--ink); color:#fff}
-.act.go:hover{background:#000}
-.act.ready{background:var(--primary); border-color:var(--primary); color:#fff}
-.act.ready:hover{background:var(--primary-dark)}
-.act.wait{color:var(--muted); cursor:progress; animation:breathe 1.6s ease-in-out infinite}
-@keyframes breathe{0%,100%{opacity:1} 50%{opacity:.42}}
+/* ---------------------------------------------------------------- pips */
+.pips{display:flex; gap:6px; justify-content:center; margin:14px 0 2px; min-height:4px}
+.pips i{width:26px; height:4px; border-radius:3px; background:var(--border); transition:background .3s ease}
+.pips i.at{background:var(--ink)}
+.pips i.past{background:var(--primary)}
 
-.note{font-size:11.5px; color:var(--muted); text-align:center; margin-top:4px;
-  min-height:17px}
-.note a{color:var(--muted)}
-.retry{margin:0 18px 16px; font-size:11.5px}
+/* ---------------------------------------------------------------- steps */
+.steps{position:relative; min-height:300px; margin-top:16px}
+.step{
+  position:absolute; inset:0; opacity:0; transform:translateY(10px);
+  pointer-events:none; transition:opacity .26s ease, transform .26s ease;
+}
+.step.live{opacity:1; transform:none; pointer-events:auto; position:relative}
+.step h2{
+  margin:0; font-family:var(--serif); font-size:27px; font-weight:600;
+  letter-spacing:0; line-height:1.22; text-align:center;
+}
+.step p.lede{
+  margin:8px 0 0; font-family:var(--serif); font-size:17.5px; line-height:1.48;
+  color:var(--muted); text-align:center;
+}
+.step.s0{padding-top:30px}
+.step.s0 h2{font-size:42px; line-height:1.1}
+.step.s0 p.lede{margin-top:12px; font-size:18.5px; line-height:1.62}
+
+.label{font-size:11.5px; font-weight:640; letter-spacing:.075em;
+  text-transform:uppercase; color:var(--faint); margin:22px 0 8px}
+input[type=text]{
+  width:100%; font-family:var(--serif); font-size:20px; color:var(--ink);
+  padding:10px 13px; border:1px solid var(--border); border-radius:9px;
+  background:var(--surface); outline:none;
+}
+input[type=text]:focus{border-color:var(--border2); box-shadow:0 0 0 3px var(--brand-soft)}
+.chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:10px}
+.chip{
+  font:inherit; font-size:13.5px; cursor:pointer; padding:5px 11px; border-radius:999px;
+  border:1px solid var(--border); background:var(--surface3); color:var(--ink2);
+}
+.chip:hover{border-color:var(--border2)}
+.chip[aria-pressed=true]{background:var(--brand-soft); border-color:var(--brand-line); color:var(--ink)}
+
+.swatches{display:grid; grid-template-columns:repeat(4,1fr); gap:10px}
+.sw{cursor:pointer; padding:0; border:1px solid var(--border); background:var(--surface);
+  border-radius:9px; overflow:hidden; text-align:left; font:inherit}
+.sw:hover{border-color:var(--border2)}
+.sw[aria-pressed=true]{border-color:var(--brand-dark); box-shadow:0 0 0 2px var(--brand-soft)}
+.sw .thumb{height:58px; background-color:var(--bg); background-size:cover; background-position:center}
+.sw .cap{display:block; padding:6px 8px 7px; font-size:12px; color:var(--muted);
+  border-top:1px solid var(--hair)}
+.sw[aria-pressed=true] .cap{color:var(--ink)}
+
+.machine{
+  display:flex; align-items:center; justify-content:center; gap:9px; flex-wrap:wrap;
+  padding:9px 12px; border-radius:8px; background:var(--surface3);
+  border:1px solid var(--hair); margin:16px 0 4px; font-size:13px; color:var(--muted);
+}
+.machine b{color:var(--ink2); font-weight:620}
+
+/* ---------------------------------------------------------- check rows */
+.rows{margin-top:4px}
+.row{display:flex; gap:12px; padding:9px 2px; border-bottom:1px solid var(--hair)}
+.row:last-child{border-bottom:0}
+.dot{width:9px; height:9px; border-radius:50%; flex:none; margin-top:6px;
+  background:var(--border2); transition:background .3s ease, box-shadow .3s ease}
+.row[data-state=run] .dot{background:var(--brand); animation:blink 1.1s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.row[data-state=ok] .dot{background:var(--primary); box-shadow:0 0 0 3px var(--primary-soft)}
+.row[data-state=bad] .dot{background:var(--deny); box-shadow:0 0 0 3px var(--deny-soft)}
+.row[data-state=hold] .dot{background:var(--warn)}
+.rtext{flex:1; min-width:0}
+.rname{font-weight:640; font-size:14px; transition:color .3s ease}
+.row[data-state=ok] .rname{color:var(--primary)}
+.row[data-state=bad] .rname{color:var(--deny)}
+.row[data-state=wait] .rname{color:var(--faint)}
+.rnote{color:var(--muted); font-size:13px; margin-top:1px}
+.rpath{font-family:var(--mono); font-size:11.5px; color:var(--faint); margin-top:3px; word-break:break-all}
+.rbtn{align-self:flex-start; margin-top:2px}
+.prog{height:4px; border-radius:3px; background:var(--hair); overflow:hidden; margin:14px 0 0}
+.prog i{display:block; height:100%; width:0; background:var(--primary); transition:width .5s ease}
+.progtext{font-size:12.5px; color:var(--muted); margin-top:8px; text-align:center;
+  font-variant-numeric:tabular-nums}
+
+/* --------------------------------------------------------------- doors */
+.door{display:flex; align-items:center; gap:13px; padding:14px 2px; border-bottom:1px solid var(--hair)}
+.door:last-child{border-bottom:0}
+.dnum{width:25px; height:25px; flex:none; border-radius:7px; font-size:12.5px; font-weight:650;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--brand-soft); border:1px solid var(--brand-line); color:var(--brand-ink)}
+.dtext{flex:1; min-width:0}
+.dtitle{font-family:var(--serif); font-weight:600; font-size:18px; line-height:1.25}
+.dsub{color:var(--muted); font-size:13px; margin-top:2px}
+.hint{font-family:var(--serif); font-style:italic; font-size:14.5px; color:var(--faint);
+  margin:14px 2px 0; text-align:center}
+
+/* ----------------------------------------------------------- footer nav */
+.nav{display:flex; align-items:center; gap:12px; margin-top:20px; padding-top:16px;
+  border-top:1px solid var(--hair)}
+.nav .sp{flex:1}
+.btn{
+  font:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  padding:9px 18px; border-radius:8px; border:1px solid var(--border);
+  background:var(--surface3); color:var(--ink2);
+  transition:background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease;
+}
+.btn:hover{border-color:var(--border2)}
+.btn.dark{background:var(--ink); color:var(--surface2); border-color:var(--ink)}
+.btn.dark:hover{background:var(--ink2); border-color:var(--ink2)}
+.btn.go{background:var(--primary); color:#F7FBF6; border-color:var(--primary)}
+.btn.go:hover{background:var(--primary-dark); border-color:var(--primary-dark)}
+.btn.sm{padding:6px 12px; font-size:13px}
+.btn[disabled]{cursor:not-allowed; opacity:.45}
+.btn[disabled]:hover{border-color:var(--border)}
+.btn[hidden]{display:none}
+.btn.waiting{animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(60,101,49,0)}50%{box-shadow:0 0 0 5px rgba(60,101,49,.16)}}
+.link{border:0; background:none; font:inherit; font-size:13.5px; color:var(--muted);
+  cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:5px 2px}
+.link:hover{color:var(--ink)}
+.link[hidden]{display:none}
+
+.foot{position:relative; z-index:1; margin-top:10px; text-align:center;
+  font-size:12px; color:var(--faint)}
+.foot .link{font-size:12px}
+
+@media (max-width:520px){
+  .panel{padding:24px 20px 18px}
+  .swatches{grid-template-columns:repeat(2,1fr)}
+  .steps{min-height:360px}
+}
 </style>
 </head>
 <body>
+<div id="backdrop"></div>
 
-<div class="launch">
+<main class="panel" id="panel">
 
-  <div class="hero">
-    <div class="mark" id="mark"></div>
-    <div>
-      <div class="wordmark">CastleKeep</div>
-      <div class="tagline">A local assistant that can only do what you let it.</div>
-    </div>
+  <div class="stage">
+    <div class="tile" id="tile"></div>
+    <div class="who" id="who"></div>
   </div>
 
-  <div class="card">
-    <h2>Checking this machine</h2>
+  <div class="pips" id="pips"></div>
 
-    <div class="row" id="rHarness">
-      <span class="dot" id="dHarness"></span>
-      <div class="txt">
-        <div class="t">Sandbox</div>
-        <div class="d" id="tHarness">asking the host what it can enforce</div>
-        <div class="d path" id="tExe"></div>
+  <div class="steps" id="steps">
+
+    <section class="step s0 live" data-i="0">
+      <h2>CastleKeep</h2>
+      <p class="lede">A local assistant that can only do what you let it.<br>Four short steps and it is yours.</p>
+    </section>
+
+    <section class="step" data-i="1">
+      <h2>Name your assistant</h2>
+      <p class="lede">The name it answers to in chat and in the run log.</p>
+      <div class="label">Name</div>
+      <input type="text" id="name" value="Max" maxlength="24" autocomplete="off" spellcheck="false">
+      <div class="chips" id="namechips"></div>
+    </section>
+
+    <section class="step" data-i="2">
+      <h2>Pick a backdrop</h2>
+      <p class="lede">Only changes how the window looks. None is fine.</p>
+      <div class="label">Backdrop</div>
+      <div class="swatches" id="swatches"></div>
+    </section>
+
+    <section class="step" data-i="3">
+      <h2>Set up this machine</h2>
+      <p class="lede">Agents and Lemonade Server on Ryzen AI. Nothing is installed or changed here.</p>
+      <div class="machine" id="machine"><b id="plat">Reading this machine</b></div>
+      <div class="rows" id="rows"></div>
+      <div class="prog"><i id="bar"></i></div>
+      <div class="progtext" id="progtext">Starting checks.</div>
+    </section>
+
+    <section class="step" data-i="4">
+      <h2 id="s4title">Ready</h2>
+      <p class="lede">Two ways in. They use the same sandbox.</p>
+      <div style="margin-top:14px">
+        <div class="door">
+          <div class="dnum">1</div>
+          <div class="dtext">
+            <div class="dtitle">Phase 1, the terminal</div>
+            <div class="dsub">Drive the sandbox by hand. No agent, no model.</div>
+          </div>
+          <button class="btn dark sm" id="goPhase1">Start</button>
+        </div>
+        <div class="door">
+          <div class="dnum">2</div>
+          <div class="dtext">
+            <div class="dtitle" id="d2title">CastleKeep</div>
+            <div class="dsub" id="d2sub">The same sandbox, with an agent in front of it.</div>
+          </div>
+          <button class="btn go sm" id="goApp">Open</button>
+        </div>
       </div>
-    </div>
+      <p class="hint">First time through, start with Phase 1.</p>
+    </section>
 
-    <div class="row" id="rModel">
-      <span class="dot" id="dModel"></span>
-      <div class="txt">
-        <div class="t">Lemonade</div>
-        <div class="d" id="tModel">looking for the server</div>
-        <div class="sugg" id="tSugg"></div>
-      </div>
-    </div>
-
-    <div class="row" id="rWarm">
-      <span class="dot" id="dWarm"></span>
-      <div class="txt">
-        <div class="t">Model</div>
-        <div class="d" id="tWarm">waiting on the model check</div>
-      </div>
-    </div>
-
-    <div class="retry hidden" id="retryWrap">
-      <button class="act" id="retry">Check again</button>
-    </div>
   </div>
 
-  <div class="card">
-    <div class="step" id="step1">
-      <span class="n">1</span>
-      <div class="txt">
-        <div class="t">Phase 1, the terminal</div>
-        <div class="d">Drive the sandbox by hand. No agent, no model.</div>
-      </div>
-      <a class="act go" href="/phase1">Start &rarr;</a>
-    </div>
-    <div class="step" id="step2">
-      <span class="n">2</span>
-      <div class="txt">
-        <div class="t">CastleKeep</div>
-        <div class="d">The same sandbox, with an agent in front of it.</div>
-      </div>
-      <a class="act wait" id="go" href="/app">Loading</a>
-    </div>
+  <div class="nav">
+    <button class="link" id="back" hidden>Back</button>
+    <span class="sp"></span>
+    <button class="link" id="skip" hidden>Skip</button>
+    <button class="btn dark" id="next">Set up</button>
   </div>
 
-  <p class="note" id="note"></p>
+</main>
 
+<div class="foot">
+  <span id="footnote">Everything on this page is read from this machine.</span>
+  <button class="link" id="redo" hidden>Start over</button>
 </div>
 
 <script type="module">
-import { dragonSvg } from "/dragon.js";
+import { wavingDragon } from "/dragonwave.js";
 
-const $ = (id) => document.getElementById(id);
+/* =======================================================  the dragon  === */
+const panel = document.getElementById("panel");
+document.getElementById("tile").innerHTML = wavingDragon();
 
-let dragonState = null;
-function setDragon(s) {
-  if (s === dragonState) return;
-  dragonState = s;
-  $("mark").innerHTML = dragonSvg(s);
+let waveTimer = null;
+function wave(ms){
+  panel.classList.add("waving");
+  clearTimeout(waveTimer);
+  if(ms) waveTimer = setTimeout(() => panel.classList.remove("waving"), ms);
 }
-setDragon("asleep");
+function stopWave(){ clearTimeout(waveTimer); panel.classList.remove("waving"); }
 
-function esc(s) {
-  return String(s === undefined || s === null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+/* ====================================================  backdrops  ======= */
+/* Drawn here as data URIs rather than shipped as image files: three small
+   generators are less to carry than three PNGs, and they stay crisp at any
+   scale. Ids match BACKDROP_IDS in core/app.py. */
+const uri = svg => 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
 
-/* Elapsed is counted from the first poll that said warming, not from the
-   server's own timestamp, so a page reloaded mid-load does not claim the
-   read only just began. */
-let warmSince = null;
-let ready = false;
-
-/* kind, not state: "state" in this file means a warm-up state the server
-   emitted, and having two of them made it easy to compare the wrong one. */
-function mark(row, kind) {        // kind: "ok" | "bad" | "busy" | ""
-  $("d" + row).className = "dot " + kind;
-  $("r" + row).className = "row" + (kind === "ok" ? " ok" : "");
-}
-
-function render(st) {
-  const probe = st.probe || {};
-  const lem = st.lemonade || {};
-  const w = st.warmup || {};
-
-  // ---- sandbox
-  if (st.mxcExe && probe.available) {
-    mark("Harness", "ok");
-    $("tHarness").textContent = "Ready on this host.";
-    $("tExe").textContent = st.mxcExe;
-  } else {
-    mark("Harness", "bad");
-    $("tHarness").textContent = st.mxcError || probe.error ||
-      "wxc-exec.exe was not found. See bin\\README.md.";
-    $("tExe").textContent = st.mxcExe || "";
+function parchment(){
+  let s = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">';
+  s += '<rect width="240" height="240" fill="#F7F3E7"/>';
+  /* Fixed seed so the tile is the same every load, and fine grain only - any
+     mark big enough to read as a shape would make the 240px seam visible. */
+  let seed = 7;
+  const r = () => { seed = (seed*1103515245 + 12345) % 2147483648; return seed/2147483648; };
+  for(let i=0;i<560;i++){
+    const x=(r()*240).toFixed(1), y=(r()*240).toFixed(1), o=(0.05+r()*0.09).toFixed(3);
+    s += '<circle cx="'+x+'" cy="'+y+'" r="'+(0.28+r()*0.55).toFixed(2)+'" fill="#A89468" fill-opacity="'+o+'"/>';
   }
+  return s + '</svg>';
+}
+function stonework(){
+  /* Two courses in a 64px tile, not three in 96. With three, rows 0 and 2 share
+     an offset and the running bond breaks at every tile edge. */
+  let s = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="64">';
+  s += '<rect width="160" height="64" fill="#F6F3EA"/>';
+  for(let row=0; row<2; row++){
+    const off = (row === 1) ? -40 : 0, y = row*32;
+    for(let k=-1;k<4;k++){
+      const x = off + k*80;
+      s += '<rect x="'+(x+2.5)+'" y="'+(y+2.5)+'" width="75" height="27" rx="3" fill="none" stroke="#E4DECE" stroke-width="1.2"/>';
+    }
+  }
+  return s + '</svg>';
+}
+function hillside(){
+  let s = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520">';
+  s += '<rect width="900" height="520" fill="#F8F6EE"/>';
+  s += '<path d="M0 400 C 150 330, 290 410, 440 372 C 600 330, 740 400, 900 352 L900 520 L0 520 Z" fill="#EDF1E8"/>';
+  s += '<path d="M0 452 C 170 404, 320 470, 470 438 C 640 402, 760 462, 900 424 L900 520 L0 520 Z" fill="#E5ECDE"/>';
+  s += '<path d="M0 496 C 200 462, 360 508, 520 482 C 690 456, 790 500, 900 480 L900 520 L0 520 Z" fill="#DDE6D4"/>';
+  return s + '</svg>';
+}
 
-  // ---- lemonade
-  $("tSugg").innerHTML = "";
-  if (!lem.reachable) {
-    mark("Model", "bad");
-    $("tModel").innerHTML = "Not running. Start it with <code>lemonade-server serve</code>";
-  } else if (!lem.modelPresent) {
-    mark("Model", "bad");
-    $("tModel").innerHTML = "Running, but not serving <b>" +
-      esc(lem.model || "the configured model") + "</b>. Pick one with " +
-      "<code>python workshop\\models.py --pick NAME</code>";
-    (lem.suggestions || []).slice(0, 5).forEach((m) => {
-      const c = document.createElement("code");
-      c.textContent = m;
-      $("tSugg").appendChild(c);
+const BACKDROPS = [
+  {id:"none",      name:"None",      css:"none",           size:"auto"},
+  {id:"parchment", name:"Parchment", css:uri(parchment()), size:"240px 240px"},
+  {id:"stone",     name:"Stonework", css:uri(stonework()), size:"160px 64px"},
+  {id:"hills",     name:"Hillside",  css:uri(hillside()),  size:"cover"}
+];
+
+const bdLayer = document.getElementById("backdrop");
+const swWrap  = document.getElementById("swatches");
+let chosenBackdrop = "none";
+
+BACKDROPS.forEach(b => {
+  const el = document.createElement("button");
+  el.className = "sw"; el.type = "button"; el.dataset.id = b.id;
+  el.setAttribute("aria-pressed", "false");
+  const th = document.createElement("span");
+  th.className = "thumb";
+  if(b.css !== "none"){
+    th.style.backgroundImage = b.css;
+    th.style.backgroundSize = b.size === "cover" ? "cover" : b.size;
+  }
+  const cap = document.createElement("span");
+  cap.className = "cap"; cap.textContent = b.name;
+  el.append(th, cap);
+  el.addEventListener("click", () => pickBackdrop(b.id));
+  swWrap.appendChild(el);
+});
+
+function pickBackdrop(id){
+  const b = BACKDROPS.find(x => x.id === id) || BACKDROPS[0];
+  chosenBackdrop = b.id;
+  for(const c of swWrap.children){
+    c.setAttribute("aria-pressed", c.dataset.id === b.id ? "true" : "false");
+  }
+  if(b.css === "none"){
+    bdLayer.classList.remove("on");
+    bdLayer.style.backgroundImage = "none";
+    return;
+  }
+  bdLayer.style.backgroundImage  = b.css;
+  bdLayer.style.backgroundSize   = b.size === "cover" ? "cover" : b.size;
+  bdLayer.style.backgroundRepeat = b.size === "cover" ? "no-repeat" : "repeat";
+  bdLayer.classList.add("on");
+}
+pickBackdrop("none");
+
+/* =========================================================  the name  === */
+const nameInput = document.getElementById("name");
+const chipWrap  = document.getElementById("namechips");
+const whoEl     = document.getElementById("who");
+
+["Max","Keeper","Scout","Pip","Bramble"].forEach(n => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.textContent = n;
+  b.addEventListener("click", () => { nameInput.value = n; syncName(); wave(1400); });
+  chipWrap.appendChild(b);
+});
+
+function assistantName(){ return nameInput.value.trim() || "Max"; }
+function syncName(){
+  for(const c of chipWrap.children){
+    c.setAttribute("aria-pressed", c.textContent === nameInput.value.trim() ? "true" : "false");
+  }
+  if(step >= 1){
+    whoEl.textContent = "";
+    const b = document.createElement("b");
+    b.textContent = assistantName();
+    whoEl.appendChild(b);
+  }
+}
+nameInput.addEventListener("input", syncName);
+
+/* Persisted by POST /api/setup, which is the only write this page makes.
+   Everything else here reports and changes nothing. */
+async function saveSetup(){
+  try{
+    const r = await fetch("/api/setup", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({assistantName: assistantName(), backdrop: chosenBackdrop})
     });
-  } else {
-    mark("Model", "ok");
-    $("tModel").innerHTML = "Serving <b>" + esc(lem.model) + "</b>";
-  }
+    const j = await r.json();
+    if(j && j.setup && j.setup.assistantName){
+      nameInput.value = j.setup.assistantName;
+      syncName();
+    }
+    return !!(j && j.saved);
+  }catch(e){ return false; }
+}
 
-  // ---- weights
-  const state = w.state;
-  ready = state === "ready";
+/* =======================================================  the checks  === */
+/* Four rows, read from /api/state. Nothing below invents a result: a row is
+   green only because the host said so, and the wording keeps the three
+   separate Lemonade claims separate - reachable, serving the model we asked
+   for, weights actually in memory. */
+const CHECKS = ["sandbox", "lemonade", "model", "workspace"];
+const NAMES  = {sandbox:"Sandbox", lemonade:"Lemonade Server", model:"Model", workspace:"Workspace"};
 
-  if (ready) {
-    mark("Warm", "ok");
-    $("tWarm").innerHTML = "Loaded into memory" +
-      (w.ms ? " in <b>" + (w.ms / 1000).toFixed(1) + "s</b>." : ".");
-    setDragon("happy");
-  } else if (state === "warming") {
-    if (warmSince === null) warmSince = Date.now();
-    mark("Warm", "busy");
-    $("tWarm").innerHTML = "Loading into memory, <b>" +
-      Math.round((Date.now() - warmSince) / 1000) + "s</b>. This happens once.";
-    setDragon("thinking");
-  } else if (state === "failed") {
-    warmSince = null;
-    mark("Warm", "bad");
-    $("tWarm").textContent = w.error || "The warm-up request failed.";
-    setDragon("alert");
-  } else {
-    warmSince = null;
-    mark("Warm", "");
-    $("tWarm").textContent = "Nothing to load yet.";
-    setDragon("asleep");
-  }
+const rowsEl = document.getElementById("rows");
+const barEl  = document.getElementById("bar");
+const progEl = document.getElementById("progtext");
 
-  // ---- step 2
-  const go = $("go");
-  const blocked = !lem.reachable || !lem.modelPresent || state === "failed";
-  $("retryWrap").classList.toggle("hidden", !blocked);
-  $("step2").className = "step" + (ready ? " done" : "");
+CHECKS.forEach(id => {
+  const r = document.createElement("div");
+  r.className = "row"; r.dataset.state = "wait"; r.dataset.id = id;
+  r.innerHTML = '<span class="dot"></span><div class="rtext">' +
+    '<div class="rname"></div><div class="rnote">Waiting.</div>' +
+    '<div class="rpath" hidden></div></div>';
+  r.querySelector(".rname").textContent = NAMES[id];
+  rowsEl.appendChild(r);
+});
 
-  if (ready) {
-    go.className = "act ready";
-    go.textContent = "Open →";
-    $("note").innerHTML = "";
-  } else if (blocked) {
-    go.className = "act";
-    go.textContent = "Open anyway";
-    $("note").textContent = "The policy and sandbox tabs work without a model.";
-  } else {
-    go.className = "act wait";
-    go.textContent = "Loading";
-    $("note").innerHTML = 'In a hurry? <a href="/app">Go in now</a>, the first ' +
-      'answer will just be slow.';
+const rowEl = id => rowsEl.querySelector('[data-id="' + id + '"]');
+
+function setRow(id, state, note, path, retry){
+  const r = rowEl(id); if(!r) return;
+  r.dataset.state = state;
+  r.querySelector(".rnote").textContent = note || "";
+  const p = r.querySelector(".rpath");
+  if(path){ p.textContent = path; p.hidden = false; } else { p.hidden = true; p.textContent = ""; }
+  const old = r.querySelector(".rbtn"); if(old) old.remove();
+  if(state === "bad" && retry){
+    const b = document.createElement("button");
+    b.className = "btn sm rbtn"; b.type = "button"; b.textContent = "Retry";
+    b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "Retrying";
+      try{ await fetch(retry, {method:"POST"}); }catch(e){}
+      poll();
+    });
+    r.appendChild(b);
   }
 }
 
-async function poll() {
-  try {
-    render(await (await fetch("/api/state")).json());
-  } catch (e) {
-    mark("Harness", "bad");
-    $("tHarness").textContent =
-      "The CastleKeep server stopped answering. Is run.py still running?";
+function allOK(){ return CHECKS.every(id => rowEl(id).dataset.state === "ok"); }
+
+function paintProgress(){
+  const done = CHECKS.filter(id => rowEl(id).dataset.state === "ok").length;
+  barEl.style.width = Math.round(done / CHECKS.length * 100) + "%";
+  progEl.textContent = done === CHECKS.length
+    ? "All four ready."
+    : done + " of " + CHECKS.length + " ready.";
+}
+
+let sawAllOK = false;
+function applyState(st){
+  /* --- this machine ------------------------------------------------- */
+  const host = st.host || {};
+  const mach = document.getElementById("machine");
+  mach.textContent = "";
+  const bits = [];
+  if(host.cpu) bits.push(host.cpu);
+  if(host.memoryGB) bits.push(host.memoryGB + " GB memory");
+  if(!bits.length && host.arch) bits.push(host.arch);
+  if(!bits.length) bits.push("This machine");
+  bits.forEach((t, i) => {
+    if(i){ const d = document.createElement("span"); d.textContent = "\u00B7"; mach.appendChild(d); }
+    const b = document.createElement("b"); b.textContent = t; mach.appendChild(b);
+  });
+
+  /* --- sandbox ------------------------------------------------------- */
+  const probe = st.probe || {};
+  if(probe.available){
+    setRow("sandbox", "ok", "Ready on this host.", st.mxcExe || "");
+  }else{
+    setRow("sandbox", "bad",
+      st.mxcError || probe.error || "The executor did not answer.",
+      st.mxcExe || "", "/api/rescan");
+  }
+
+  /* --- lemonade, model, weights -------------------------------------- */
+  const lem = st.lemonade || {};
+  const warm = st.warmup || {};
+  const wanted = lem.model || "the configured model";
+
+  if(lem.reachable){
+    setRow("lemonade", "ok", "Answering at " + (lem.baseUrl || "the configured address") + ".", "");
+  }else{
+    setRow("lemonade", "bad", lem.note || "Not answering.",
+      lem.baseUrl || "", "/api/warmup");
+  }
+
+  if(!lem.reachable){
+    setRow("model", "hold", "Waiting on Lemonade Server.", "");
+  }else if(!lem.modelPresent){
+    /* Reachable is not the same as wired in. Saying so in these words is the
+       whole reason this is a separate line from the one above. */
+    setRow("model", "bad",
+      "Answering, but not serving " + wanted + ".",
+      (lem.suggestions || []).slice(0, 2).join("  ") || "", "/api/warmup");
+  }else if(warm.state === "ready"){
+    setRow("model", "ok",
+      wanted + ", loaded into memory in " + ((warm.ms || 0) / 1000).toFixed(1) + "s.", "");
+  }else if(warm.state === "failed"){
+    setRow("model", "bad", warm.error || "The weights did not load.", "", "/api/warmup");
+  }else{
+    setRow("model", "run", "Serving " + wanted + ". Loading the weights.", "");
+  }
+
+  /* --- workspace ------------------------------------------------------ */
+  const n = st.workspaceFiles;
+  if(typeof n === "number"){
+    setRow("workspace", "ok", n === 1 ? "1 file ready." : n + " files ready.", st.workspace || "");
+  }else{
+    setRow("workspace", "bad", "The workspace folder could not be read.",
+      st.workspace || "", "/api/rescan");
+  }
+
+  paintProgress();
+  if(step === 3) paintNav();
+
+  const done = allOK();
+  if(done && !sawAllOK){ sawAllOK = true; if(step === 3) wave(2200); }
+  if(!done) sawAllOK = false;
+
+  /* The app door waits on the weights, not on the server being up. Opening
+     the chat before the model is in memory is how a green preflight turns
+     into a forty second stall on the first message. */
+  const ready = warm.state === "ready";
+  goApp.disabled = !ready;
+  goApp.classList.toggle("waiting", warm.state === "warming");
+}
+
+let polling = false;
+async function poll(){
+  if(polling) return;
+  polling = true;
+  try{
+    const r = await fetch("/api/state", {cache:"no-store"});
+    applyState(await r.json());
+  }catch(e){
+    setRow("sandbox", "bad", "The CastleKeep server stopped answering.", "", null);
+  }finally{
+    polling = false;
   }
 }
 
-$("retry").addEventListener("click", async () => {
-  const b = $("retry");
-  b.disabled = true;
-  b.textContent = "Checking";
-  warmSince = null;
-  try { await fetch("/api/warmup", { method: "POST" }); } catch (e) { /* poll reports it */ }
-  b.disabled = false;
-  b.textContent = "Check again";
-  poll();
+/* ======================================================  the wizard  ==== */
+const LAST = 4;
+let step = 0;
+const stepEls = [...document.querySelectorAll(".step")];
+const pipsEl  = document.getElementById("pips");
+const backBtn = document.getElementById("back");
+const skipBtn = document.getElementById("skip");
+const nextBtn = document.getElementById("next");
+const goApp   = document.getElementById("goApp");
+const redoBtn = document.getElementById("redo");
+
+for(let p=1;p<=LAST;p++) pipsEl.appendChild(document.createElement("i"));
+
+function paintPips(){
+  [...pipsEl.children].forEach((el, idx) => {
+    const n = idx + 1;
+    el.className = n < step ? "past" : (n === step ? "at" : "");
+  });
+  pipsEl.style.visibility = step === 0 ? "hidden" : "visible";
+}
+
+function paintNav(){
+  backBtn.hidden = step === 0 || (resumed && step === 3);
+  skipBtn.hidden = step !== 2;
+  // On the last step the two doors are the only things left to press. A third
+  // button there would be a button that does nothing.
+  nextBtn.hidden = step === LAST;
+  nextBtn.classList.remove("go", "dark", "waiting");
+
+  if(step === 0){
+    nextBtn.textContent = "Set up"; nextBtn.classList.add("dark"); nextBtn.disabled = false;
+  }else if(step === 3){
+    const ready = allOK();
+    nextBtn.textContent = ready ? "Continue" : "Checking";
+    nextBtn.disabled = !ready;
+    nextBtn.classList.add(ready ? "go" : "dark");
+  }else{
+    nextBtn.textContent = "Next"; nextBtn.classList.add("dark"); nextBtn.disabled = false;
+  }
+}
+
+function show(n){
+  step = Math.max(0, Math.min(LAST, n));
+  stepEls.forEach(el => el.classList.toggle("live", Number(el.dataset.i) === step));
+  panel.classList.toggle("compact", step >= 3);
+  paintPips(); paintNav();
+
+  if(step === 0){ whoEl.textContent = ""; wave(0); } else { syncName(); }
+  if(step === 1){ wave(1500); setTimeout(() => { nameInput.focus(); nameInput.select(); }, 280); }
+  if(step === 2){ stopWave(); }
+  if(step === 3){ poll(); if(allOK()) wave(1200); }
+  if(step === LAST){
+    document.getElementById("s4title").textContent = assistantName() + " is ready";
+    document.getElementById("d2title").textContent = "CastleKeep, with " + assistantName();
+    document.getElementById("d2sub").textContent =
+      assistantName() + " works in the sandbox you just set up.";
+    wave(2600);
+  }
+}
+
+nextBtn.addEventListener("click", async () => {
+  if(step === LAST){ show(3); return; }
+  /* Save on the way out of the backdrop step, so the name is on disk before
+     anything else can read it - including the title of the step after next. */
+  if(step === 2) await saveSetup();
+  show(step + 1);
+});
+backBtn.addEventListener("click", () => show(step - 1));
+skipBtn.addEventListener("click", async () => { pickBackdrop("none"); await saveSetup(); show(step + 1); });
+
+document.addEventListener("keydown", e => {
+  if(e.key === "Enter" && !nextBtn.disabled && step !== LAST){ e.preventDefault(); nextBtn.click(); }
+  if(e.key === "ArrowLeft" && !backBtn.hidden && document.activeElement !== nameInput){ backBtn.click(); }
 });
 
-/* Going in before the weights are resident is allowed, but it happens through
-   the link in the note, not by clicking a button that says Loading. */
-$("go").addEventListener("click", (e) => {
-  if ($("go").classList.contains("wait")) e.preventDefault();
+document.getElementById("goPhase1").addEventListener("click", () => { location.href = "/phase1"; });
+goApp.addEventListener("click", () => { location.href = "/app"; });
+
+/* ==========================================================  resume  ==== */
+/* The wizard is a once-per-machine thing. Come back after that and the only
+   step worth repeating is the readiness check, so the page opens there. The
+   name and backdrop are still editable: Start over walks back to the top. */
+let resumed = false;
+
+redoBtn.addEventListener("click", () => {
+  resumed = false;
+  redoBtn.hidden = true;
+  document.getElementById("footnote").textContent =
+    "Everything on this page is read from this machine.";
+  show(0);
 });
 
-poll();
-setInterval(poll, 1200);
+(async function boot(){
+  let st = null;
+  try{ st = await (await fetch("/api/state", {cache:"no-store"})).json(); }catch(e){}
+
+  if(st){
+    const setup = st.setup || {};
+    if(setup.assistantName) nameInput.value = setup.assistantName;
+    pickBackdrop(setup.backdrop || "none");
+    syncName();
+    applyState(st);
+    resumed = !!setup.named;
+  }
+
+  if(resumed){
+    document.getElementById("footnote").textContent =
+      "Set up already. This is just the readiness check.";
+    redoBtn.hidden = false;
+    show(3);
+  }else{
+    show(0);
+  }
+
+  setInterval(() => { if(step >= 3) poll(); }, 1200);
+})();
 </script>
 </body>
 </html>

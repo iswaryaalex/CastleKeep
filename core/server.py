@@ -30,6 +30,8 @@ PAGES = {
     "/launch": "/launch.html",
 }
 
+_EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "CastleKeep"
@@ -146,6 +148,9 @@ class Handler(BaseHTTPRequestHandler):
                 "refusals": app.refusals(),
                 "mxcExe": app.mxc.exe,
                 "mxcError": app.mxc.exe_error,
+                "setup": app.setup(),
+                "host": app.host_info(),
+                "workspaceFiles": app.workspace_count(),
             })
         if path == "/api/config/reload":
             # Cheap: no MXC re-probe. Just the file.
@@ -169,6 +174,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_post(self, path):
         app = self.app
+
+        if path == "/api/setup":
+            # The launch wizard's two answers. Deliberately the only write the
+            # launch page makes: it reports on the machine, it does not change
+            # it, and the one thing it does persist is the thing the person
+            # typed.
+            body = self._body()
+            try:
+                saved = app.save_setup(name=body.get("assistantName"),
+                                       backdrop=body.get("backdrop"))
+            except ValueError as e:
+                return self._json({"saved": False, "error": str(e)}, 400)
+            except OSError as e:
+                return self._json({"saved": False,
+                                   "error": "config.json could not be written "
+                                            "(%s)." % e}, 500)
+            return self._json({"saved": True, "setup": saved})
 
         if path == "/api/policy":
             incoming = self._body()
@@ -303,7 +325,11 @@ class Handler(BaseHTTPRequestHandler):
         full = os.path.normpath(os.path.join(UI_DIR, rel))
         if not full.startswith(UI_DIR) or not os.path.isfile(full):
             return self._send(404, b"not found", "text/plain")
-        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+        # Python's table predates woff2 on some builds, and a font served as
+        # application/octet-stream is refused outright by Firefox.
+        ctype = (_EXTRA_TYPES.get(os.path.splitext(full)[1].lower())
+                 or mimetypes.guess_type(full)[0]
+                 or "application/octet-stream")
         if ctype.startswith("text/") or ctype in ("application/javascript",
                                                   "image/svg+xml"):
             ctype += "; charset=utf-8"
