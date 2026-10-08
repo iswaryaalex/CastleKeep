@@ -7,7 +7,10 @@ import os
 import threading
 import time
 
+from . import agents as agents_mod
+from . import mailbox as mailbox_mod
 from . import policy as policy_mod
+from . import profile as profile_mod
 from . import tools as tools_mod
 from .lemonade import Lemonade
 from .mxc import Mxc
@@ -23,10 +26,23 @@ class App:
         self.policy = policy_mod.load(self.policy_path)
         self._policy_mtime = _mtime(self.policy_path)
 
+        # Per-subagent policies, keyed by agent id. The root policy.json above
+        # stays exactly where it was and keeps its old meaning: it is what
+        # verify.py, pwsh-ladder.py and Phase 1 all read, and it is the
+        # fallback for any agent that has no file of its own yet.
+        self._policies = {}
+        self._policy_mtimes = {}
+
         ws = (self.cfg.get("agent") or {}).get("workspace") or "workspace"
         self.workspace = os.path.abspath(os.path.join(self.project_dir, ws))
         os.makedirs(self.workspace, exist_ok=True)
+        self.mailbox = os.path.abspath(os.path.join(
+            self.project_dir,
+            (self.cfg.get("mail") or {}).get("dir") or "mailbox"))
+        mailbox_mod.ensure(self.mailbox, self.project_dir)
         self.capture_dir = os.path.join(self.project_dir, "receipts")
+
+        self.profile = profile_mod.load(self.project_dir)
 
         self.lock = threading.Lock()
         self.runs = []
@@ -48,7 +64,48 @@ class App:
     # -- paths ------------------------------------------------------------
 
     def path_ctx(self):
-        return policy_mod.path_context(self.project_dir, self.workspace)
+        return policy_mod.path_context(self.project_dir, self.workspace,
+                                       self.mailbox)
+
+    # -- profile ----------------------------------------------------------
+
+    def active_agent(self):
+        p = self.profile or {}
+        return p.get("activeAgent") or agents_mod.DEFAULT_ID
+
+    def set_profile(self, incoming):
+        """Save the profile and lay down a policy file for each subagent the
+        participant chose.
+
+        The preset only lands if that agent has no policy file yet. Re-running
+        onboarding should not silently throw away a policy somebody has spent
+        the last ten minutes editing - and overwriting the one artefact the
+        workshop is about would be the single worst thing this function could
+        do."""
+        self.profile = profile_mod.save(self.project_dir, incoming)
+        written = []
+        for agent_id in self.profile["subagents"]:
+            path = self.policy_path_for(agent_id)
+            if os.path.exists(path):
+                continue
+            pol = agents_mod.preset(agent_id, self.profile["presets"].get(agent_id))
+            if pol is None:
+                continue
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            policy_mod.save(path, pol)
+            written.append(agent_id)
+        self._policies.clear()
+        self._policy_mtimes.clear()
+        return self.profile, written
+
+    def apply_preset(self, agent_id, preset_id):
+        """Overwrite one agent's policy with a named preset. Unlike
+        set_profile this is explicit - the participant clicked a preset in the
+        Policy tab knowing it replaces what is there."""
+        pol = agents_mod.preset(agent_id, preset_id)
+        if pol is None:
+            return None
+        return self.save_policy(pol, agent_id)
 
     # -- config -----------------------------------------------------------
 
@@ -108,28 +165,105 @@ class App:
 
     # -- policy -----------------------------------------------------------
 
-    def reload_policy(self):
-        """Read policy.json from disk if it changed. Called before every
-        single tool call - the whole demo depends on an edit landing on the
-        next call without a restart."""
-        m = _mtime(self.policy_path)
-        if m != self._policy_mtime:
-            try:
-                self.policy = policy_mod.load(self.policy_path)
-                self._policy_mtime = m
-            except Exception as e:
-                self.note("warn", "policy.json could not be parsed (%s). Still "
-                                  "using the last good copy." % e)
-        return self.policy
+    def policy_path_for(self, agent_id=None):
+        """Where one agent's policy lives. None means the root policy.json,
+        which is what Phase 1, verify.py and pwsh-ladder.py all mean."""
+        if not agent_id:
+            return self.policy_path
+        rec = agents_mod.get(agent_id)
+        return os.path.join(self.project_dir, *rec["policyFile"].split("/"))
 
-    def save_policy(self, new_policy):
-        policy_mod.save(self.policy_path, new_policy)
-        self.policy = new_policy
-        self._policy_mtime = _mtime(self.policy_path)
-        return self.policy
+    def rel_policy_path(self, agent_id=None):
+        """The policy file as the UI should name it. The Policy tab says which
+        file it is editing out loud, because with more than one of them on
+        disk "Save" is otherwise a guess."""
+        return rel(self.policy_path_for(agent_id), self.project_dir)
+
+    def reload_policy(self, agent_id=None):
+        """Read a policy from disk if it changed. Called before every single
+        tool call - the whole demo depends on an edit landing on the next call
+        without a restart.
+
+        Called with no argument it behaves exactly as it always did, so the
+        callers that predate subagents did not have to change."""
+        if not agent_id:
+            m = _mtime(self.policy_path)
+            if m != self._policy_mtime:
+                try:
+                    self.policy = policy_mod.load(self.policy_path)
+                    self._policy_mtime = m
+                except Exception as e:
+                    self.note("warn", "policy.json could not be parsed (%s). "
+                                      "Still using the last good copy." % e)
+            return self.policy
+
+        path = self.policy_path_for(agent_id)
+        m = _mtime(path)
+        if m is None:
+            # No file for this agent yet - onboarding has not run, or somebody
+            # deleted it. Fall back to the root policy rather than to an empty
+            # dict: an empty policy grants nothing, and "every tool call is
+            # refused" is a confusing way to learn your file is missing.
+            return self.reload_policy()
+        if m != self._policy_mtimes.get(agent_id) or agent_id not in self._policies:
+            try:
+                self._policies[agent_id] = policy_mod.load(path)
+                self._policy_mtimes[agent_id] = m
+            except Exception as e:
+                self.note("warn", "%s could not be parsed (%s). Still using the "
+                                  "last good copy." % (rel(path, self.project_dir), e))
+                if agent_id not in self._policies:
+                    return self.reload_policy()
+        return self._policies[agent_id]
+
+    def save_policy(self, new_policy, agent_id=None):
+        path = self.policy_path_for(agent_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        policy_mod.save(path, new_policy)
+        if not agent_id:
+            self.policy = new_policy
+            self._policy_mtime = _mtime(path)
+            return self.policy
+        self._policies[agent_id] = new_policy
+        self._policy_mtimes[agent_id] = _mtime(path)
+        return new_policy
+
+    def working_dir(self, pol):
+        """Where the contained process starts.
+
+        It has to be somewhere the policy actually grants. A sandbox launched
+        with a cwd it cannot reach fails with 'Access is denied' before the
+        command runs at all - which reads on screen as the tool being refused,
+        when what was really refused was the working directory. That is the
+        worst failure this app can produce, because it is a real refusal
+        reported against the wrong thing.
+
+        So: derive it from the policy rather than assuming the workspace.
+        Prefer somewhere writable, fall back to somewhere readable, and finally
+        to System32, which every policy must grant or no tool could start.
+        Narrow the policy and the cwd narrows with it."""
+        ctx = self.path_ctx()
+        paths = (policy_mod.normalise(pol).get("paths") or {})
+
+        def usable(kind):
+            for raw in paths.get(kind) or []:
+                try:
+                    full = policy_mod.expand(raw, ctx)
+                except policy_mod.PolicyError:
+                    continue
+                if os.path.isdir(full):
+                    yield full
+
+        for full in usable("write"):
+            return full
+        system32 = ctx["system32"].lower()
+        for full in usable("read"):
+            if full.lower() != system32:
+                return full
+        return ctx["system32"] if os.path.isdir(ctx["system32"]) else None
 
     def compile_for(self, pol, command, cwd=None):
-        cwd = cwd or (self.workspace if os.path.isdir(self.workspace) else None)
+        cwd = cwd or self.working_dir(pol)
         return policy_mod.compile_config(
             pol, self.path_ctx(), command, cwd=cwd, caps=self.caps,
             dialect=self.dialect, capture_dir=self.capture_dir)
@@ -262,6 +396,14 @@ def _slim(r):
     out["stderr"] = (r.get("stderr") or "")[:2000]
     out["config"] = r.get("config")
     return out
+
+
+def rel(path, base):
+    """A path as a human would say it out loud, for notes and error messages."""
+    try:
+        return os.path.relpath(path, base)
+    except ValueError:
+        return path
 
 
 def _load_json(path):

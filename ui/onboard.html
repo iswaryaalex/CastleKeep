@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up CastleKeep</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
+<style>
+body{overflow:auto; display:grid; place-items:start center; min-height:100vh;
+  background:var(--bg); padding:40px 20px 64px}
+
+.ob{width:100%; max-width:660px}
+
+.hero{display:flex; align-items:center; gap:14px; margin-bottom:10px}
+.mark{width:52px; height:52px; border-radius:14px; display:grid;
+  place-items:center; background:var(--brand-soft);
+  border:1px solid var(--brand-line); flex:0 0 52px}
+.mark svg{width:42px; height:42px}
+.wordmark{font-size:22px; font-weight:800; letter-spacing:-.02em; line-height:1.2}
+.tagline{color:var(--muted); font-size:12.5px; margin-top:3px}
+
+/* progress */
+.pips{display:flex; gap:6px; margin:18px 0 20px}
+.pip{height:4px; flex:1; border-radius:2px; background:var(--border);
+  transition:background .3s}
+.pip.on{background:var(--brand-dark)}
+.pip.done{background:var(--primary)}
+
+.panel{background:var(--surface); border:1px solid var(--border);
+  border-radius:14px; box-shadow:var(--shadow); padding:26px 28px}
+.panel[hidden]{display:none}
+.step-n{font-size:10px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint)}
+.panel h2{font-size:20px; margin:6px 0 6px; letter-spacing:-.02em}
+.panel .lede{color:var(--muted); font-size:13px; line-height:1.6;
+  max-width:60ch; margin-bottom:20px}
+
+.bigin{width:100%; height:46px; padding:0 14px; font-size:16px; font-weight:600;
+  border:1px solid var(--border2); border-radius:10px; background:var(--surface2);
+  color:var(--ink); font-family:var(--sans)}
+.bigin:focus{outline:none; border-color:var(--brand-dark);
+  background:var(--surface); box-shadow:0 0 0 3px var(--brand-soft)}
+
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+.sug{height:28px; padding:0 11px; border-radius:8px; font-size:12px;
+  font-weight:600; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface2); color:var(--ink2)}
+.sug:hover{background:var(--brand-soft); border-color:var(--brand-line)}
+
+/* selectable cards, used for subagents and for presets */
+.pick{display:flex; gap:13px; align-items:flex-start; width:100%; text-align:left;
+  padding:15px 16px; border:1px solid var(--border2); border-radius:12px;
+  background:var(--surface2); cursor:pointer; margin-bottom:10px;
+  font-family:var(--sans); color:var(--ink)}
+.pick:hover{border-color:var(--brand-line); background:var(--brand-soft)}
+.pick.on{border-color:var(--primary); background:var(--primary-soft);
+  box-shadow:0 0 0 1px var(--primary)}
+.box{flex:0 0 18px; width:18px; height:18px; border-radius:5px; margin-top:2px;
+  border:1.5px solid var(--border2); background:var(--surface); display:grid;
+  place-items:center; font-size:12px; font-weight:800; color:#fff}
+.pick.on .box{background:var(--primary); border-color:var(--primary)}
+.pick.on .box::after{content:"\2713"}
+.pick .t{font-size:14px; font-weight:700; display:flex; align-items:center; gap:7px}
+.pick .d{font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.55}
+.pick .g{margin-top:9px; display:flex; flex-direction:column; gap:3px}
+.pick .g div{font-size:11.5px; color:var(--ink2); display:flex; gap:7px}
+.pick .g b{flex:0 0 72px; color:var(--faint); font-weight:700; font-size:10px;
+  letter-spacing:.07em; text-transform:uppercase; padding-top:1px}
+.pick .g code{font-size:10.5px}
+.pick .refuses{margin-top:9px; font-size:11.5px; color:var(--deny);
+  background:var(--deny-soft); border:1px solid var(--deny-line);
+  border-radius:7px; padding:6px 9px; line-height:1.5}
+
+.agentgroup{margin-bottom:22px}
+.agentgroup > h3{font-size:13px; margin-bottom:3px}
+.agentgroup > p{font-size:12px; color:var(--muted); margin-bottom:11px}
+
+.nav{display:flex; gap:10px; align-items:center; margin-top:22px}
+.b{height:38px; padding:0 18px; border-radius:10px; font-size:13px;
+  font-weight:700; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface); color:var(--ink2); font-family:var(--sans)}
+.b:hover{background:var(--surface3)}
+.b.go{background:var(--primary); border-color:var(--primary); color:#fff}
+.b.go:hover{background:var(--primary-dark)}
+.b:disabled{opacity:.45; cursor:not-allowed}
+.nav .hint{font-size:11.5px; color:var(--muted); margin-left:auto}
+
+.foot{text-align:center; font-size:11.5px; color:var(--faint); margin-top:18px}
+.foot a{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="ob">
+
+  <div class="hero">
+    <div class="mark" id="mark"></div>
+    <div>
+      <div class="wordmark">CastleKeep</div>
+      <div class="tagline" id="tagline">Let's set this up. Four questions.</div>
+    </div>
+  </div>
+
+  <div class="pips">
+    <span class="pip" data-pip="0"></span>
+    <span class="pip" data-pip="1"></span>
+    <span class="pip" data-pip="2"></span>
+    <span class="pip" data-pip="3"></span>
+  </div>
+
+  <!-- 1 ------------------------------------------------------------- -->
+  <section class="panel" id="p0">
+    <div class="step-n">Step 1 of 4</div>
+    <h2>What should we call you?</h2>
+    <p class="lede">Your agent uses this when it talks to you. It stays on this
+      machine, in a file called <code>profile.json</code> that is not in git.</p>
+    <input class="bigin" id="userName" placeholder="Your name" autocomplete="off"
+           spellcheck="false" maxlength="40">
+    <div class="nav">
+      <button class="b go" data-next>Continue</button>
+      <span class="hint">Enter</span>
+    </div>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------- -->
+  <section class="panel" id="p1" hidden>
+    <div class="step-n">Step 2 of 4</div>
+    <h2>Now name your agent.</h2>
+    <p class="lede">Anything you like. You are going to spend the next half hour
+      telling it what it may and may not do, so it helps if it has a name.</p>
+    <input class="bigin" id="agentName" placeholder="Assistant" autocomplete="off"
+           spellcheck="false" maxlength="30">
+    <div class="chips" id="agentSugs"></div>
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" data-next>Continue</button>
+    </div>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------- -->
+  <section class="panel" id="p2" hidden>
+    <div class="step-n">Step 3 of 4</div>
+    <h2>What should <span id="agentEcho">it</span> be able to help with?</h2>
+    <p class="lede">Each of these is a separate agent with its own tools and its
+      own security policy. Turning one on does not grant it anything yet - that
+      is the next question.</p>
+    <div id="subagents"></div>
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" data-next id="next2">Continue</button>
+    </div>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------- -->
+  <section class="panel" id="p3" hidden>
+    <div class="step-n">Step 4 of 4</div>
+    <h2>Decide what each one is allowed to touch.</h2>
+    <p class="lede">These are starting points, not locks. Every one of them is a
+      plain policy file you can edit while the app is running, and the edit lands
+      on the agent's very next action. Nothing here can grant something the
+      Policy tab could not.</p>
+    <div id="presets"></div>
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" id="finish">Finish setup</button>
+      <span class="hint" id="saveHint"></span>
+    </div>
+  </section>
+
+  <p class="foot">Changed your mind later? Settings has a reset.
+     &nbsp;·&nbsp; <a href="/app">Skip setup</a></p>
+
+</div>
+
+<script type="module">
+import { dragonSvg } from "/dragon.js";
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+
+$("mark").innerHTML = dragonSvg("asleep");
+
+const AGENT_SUGGESTIONS = ["Keep", "Dragon", "Pip", "Mortimer", "Scout", "Wick"];
+
+const S = {
+  step: 0,
+  agents: [],
+  chosen: new Set(),
+  presets: {},         // agentId -> presetId
+};
+
+/* ------------------------------------------------------------------ nav */
+
+function show(n) {
+  S.step = Math.max(0, Math.min(3, n));
+  for (let i = 0; i < 4; i++) $("p" + i).hidden = i !== S.step;
+  document.querySelectorAll(".pip").forEach((p, i) => {
+    p.className = "pip" + (i < S.step ? " done" : i === S.step ? " on" : "");
+  });
+  // The dragon wakes up as you go, so the last screen does not look like the
+  // first one with different words on it.
+  $("mark").innerHTML = dragonSvg(["asleep", "idle", "thinking", "happy"][S.step]);
+  if (S.step === 2) renderSubagents();
+  if (S.step === 3) renderPresets();
+  const focus = $("p" + S.step).querySelector(".bigin");
+  if (focus) setTimeout(() => focus.focus(), 30);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.querySelectorAll("[data-next]").forEach((b) =>
+  b.addEventListener("click", () => show(S.step + 1)));
+document.querySelectorAll("[data-back]").forEach((b) =>
+  b.addEventListener("click", () => show(S.step - 1)));
+
+/* Enter advances, so the whole thing can be done from the keyboard. */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || S.step === 3) return;
+  e.preventDefault();
+  show(S.step + 1);
+});
+
+$("agentName").addEventListener("input", () => {
+  $("agentEcho").textContent = ($("agentName").value || "").trim() || "it";
+});
+
+/* ------------------------------------------------------- agent name chips */
+
+for (const name of AGENT_SUGGESTIONS) {
+  const b = el("button", "sug", name);
+  b.type = "button";
+  b.addEventListener("click", () => {
+    $("agentName").value = name;
+    $("agentEcho").textContent = name;
+    $("agentName").focus();
+  });
+  $("agentSugs").appendChild(b);
+}
+
+/* ----------------------------------------------------------- subagents */
+
+function renderSubagents() {
+  const box = $("subagents");
+  box.innerHTML = "";
+  for (const a of S.agents) {
+    const card = el("button", "pick" + (S.chosen.has(a.id) ? " on" : ""));
+    card.type = "button";
+    card.appendChild(el("span", "box"));
+    const txt = el("div");
+    txt.appendChild(el("div", "t", a.label));
+    txt.appendChild(el("div", "d", a.blurb));
+    const g = el("div", "g");
+    const row = el("div");
+    row.appendChild(el("b", null, "Tools"));
+    row.appendChild(el("span", null, a.tools.join(", ")));
+    g.appendChild(row);
+    txt.appendChild(g);
+    card.appendChild(txt);
+    card.addEventListener("click", () => {
+      if (S.chosen.has(a.id)) S.chosen.delete(a.id);
+      else S.chosen.add(a.id);
+      renderSubagents();
+      $("next2").disabled = S.chosen.size === 0;
+    });
+    box.appendChild(card);
+  }
+  $("next2").disabled = S.chosen.size === 0;
+}
+
+/* ------------------------------------------------------------- presets */
+
+function renderPresets() {
+  const box = $("presets");
+  box.innerHTML = "";
+  for (const a of S.agents) {
+    if (!S.chosen.has(a.id)) continue;
+    const group = el("div", "agentgroup");
+    group.appendChild(el("h3", null, a.label));
+    group.appendChild(el("p", null, a.blurb));
+
+    for (const p of a.presets) {
+      const card = el("button", "pick" + (S.presets[a.id] === p.id ? " on" : ""));
+      card.type = "button";
+      card.appendChild(el("span", "box"));
+      const txt = el("div");
+      const t = el("div", "t");
+      t.appendChild(el("span", null, p.label));
+      if (p.recommended) t.appendChild(el("span", "chip ok", "recommended"));
+      txt.appendChild(t);
+      txt.appendChild(el("div", "d", p.summary));
+
+      const g = el("div", "g");
+      addGrant(g, "Reads", p.grants.read.length ? p.grants.read : ["nothing extra"]);
+      addGrant(g, "Writes", p.grants.write.length ? p.grants.write : ["nothing"]);
+      addGrant(g, "Network", [p.grants.outbound === "allow"
+        ? "outbound allowed" : "no network at all"]);
+      if (p.grants.toolsOff.length)
+        addGrant(g, "Off", p.grants.toolsOff);
+      txt.appendChild(g);
+
+      txt.appendChild(el("div", "refuses", "Will refuse: " + p.refuses));
+      card.appendChild(txt);
+      card.addEventListener("click", () => {
+        S.presets[a.id] = p.id;
+        renderPresets();
+      });
+      group.appendChild(card);
+    }
+    box.appendChild(group);
+  }
+}
+
+function addGrant(g, label, values) {
+  const row = el("div");
+  row.appendChild(el("b", null, label));
+  const v = el("span");
+  values.forEach((s, i) => {
+    if (i) v.appendChild(document.createTextNode("  "));
+    v.appendChild(el("code", null, s));
+  });
+  row.appendChild(v);
+  g.appendChild(row);
+}
+
+/* ---------------------------------------------------------------- save */
+
+$("finish").addEventListener("click", async () => {
+  const btn = $("finish");
+  btn.disabled = true;
+  $("saveHint").textContent = "Writing your policy files…";
+  const payload = {
+    userName: $("userName").value.trim(),
+    agentName: $("agentName").value.trim() || "Assistant",
+    subagents: S.agents.filter((a) => S.chosen.has(a.id)).map((a) => a.id),
+    presets: S.presets,
+  };
+  payload.activeAgent = payload.subagents[0];
+  try {
+    const r = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    location.href = "/app";
+  } catch (e) {
+    btn.disabled = false;
+    $("saveHint").textContent = "Could not save: " + (e.message || e);
+  }
+});
+
+/* ---------------------------------------------------------------- boot */
+
+(async function boot() {
+  try {
+    const st = await (await fetch("/api/profile")).json();
+    S.agents = st.agents || [];
+    // Somebody re-running onboarding should see their current answers, not a
+    // blank form that silently discards them.
+    const p = st.profile;
+    if (p) {
+      $("userName").value = p.userName || "";
+      $("agentName").value = p.agentName || "";
+      $("agentEcho").textContent = p.agentName || "it";
+      (p.subagents || []).forEach((id) => S.chosen.add(id));
+      Object.assign(S.presets, p.presets || {});
+      $("tagline").textContent = "Changing your setup. Four questions.";
+    }
+    for (const a of S.agents) {
+      if (!S.chosen.size && a.id === "computer-assist") S.chosen.add(a.id);
+      if (!S.presets[a.id]) {
+        const rec = a.presets.find((x) => x.recommended) || a.presets[0];
+        if (rec) S.presets[a.id] = rec.id;
+      }
+    }
+  } catch (e) {
+    $("tagline").textContent = "The CastleKeep server is not answering.";
+  }
+  show(0);
+})();
+</script>
+</body>
+</html>

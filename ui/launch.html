@@ -131,8 +131,8 @@ body{overflow:auto; display:grid; place-items:center; min-height:100vh;
     <div class="step" id="step2">
       <span class="n">2</span>
       <div class="txt">
-        <div class="t">CastleKeep</div>
-        <div class="d">The same sandbox, with an agent in front of it.</div>
+        <div class="t" id="step2t">CastleKeep</div>
+        <div class="d" id="step2d">The same sandbox, with an agent in front of it.</div>
       </div>
       <a class="act wait" id="go" href="/app">Loading</a>
     </div>
@@ -238,24 +238,39 @@ function render(st) {
   }
 
   // ---- step 2
+  //
+  // Where "Open" goes depends on whether this machine has been set up. A
+  // participant on a fresh clone needs to name themselves and pick what their
+  // agent may do before any of the app makes sense; somebody coming back
+  // should not be asked twice.
+  const onboarded = !!st.profile;
+  const dest = onboarded ? "/app" : "/onboard";
   const go = $("go");
+  go.href = dest;
+  $("step2t").textContent = onboarded
+    ? (st.profile.agentName || "CastleKeep")
+    : "Set up your agent";
+  $("step2d").textContent = onboarded
+    ? "The same sandbox, with an agent in front of it."
+    : "Name it, pick what it does, and decide what it may touch.";
+
   const blocked = !lem.reachable || !lem.modelPresent || state === "failed";
   $("retryWrap").classList.toggle("hidden", !blocked);
   $("step2").className = "step" + (ready ? " done" : "");
 
   if (ready) {
     go.className = "act ready";
-    go.textContent = "Open →";
+    go.textContent = onboarded ? "Open →" : "Set up →";
     $("note").innerHTML = "";
   } else if (blocked) {
     go.className = "act";
-    go.textContent = "Open anyway";
-    $("note").textContent = "The policy and sandbox tabs work without a model.";
+    go.textContent = onboarded ? "Open anyway" : "Set up anyway";
+    $("note").textContent = "Setup, policy and the sandbox tabs all work without a model.";
   } else {
     go.className = "act wait";
     go.textContent = "Loading";
-    $("note").innerHTML = 'In a hurry? <a href="/app">Go in now</a>, the first ' +
-      'answer will just be slow.';
+    $("note").innerHTML = 'In a hurry? <a href="' + dest + '">Go in now</a>, the ' +
+      'first answer will just be slow.';
   }
 }
 

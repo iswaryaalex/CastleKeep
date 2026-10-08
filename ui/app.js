@@ -22,13 +22,21 @@ const S = {
   state: null,
   policy: null,      // working copy, may be dirty
   dirty: false,
-  history: [],       // OpenAI-shaped chat history
+  agent: null,       // active subagent id; null until the first hydrate
+  histories: {},     // per-subagent chat history - switching agents must not
+                     // carry one agent's conversation into another's context
   busy: false,
   abort: null,
   turnCalls: 0,
   turnRefused: 0,
   warmPoll: null,    // interval id while the model's weights load
+  mail: null,
 };
+
+const agentRec = () =>
+  ((S.state && S.state.agents) || []).find((a) => a.id === S.agent) || null;
+
+const history = () => (S.histories[S.agent] = S.histories[S.agent] || []);
 
 /* ====================================================================== */
 /* dragon                                                                  */
@@ -126,15 +134,59 @@ async function sse(url, payload, onEvent, signal) {
 /* ====================================================================== */
 
 async function hydrate() {
-  const st = await getJSON("/api/state");
+  const q = S.agent ? "?agent=" + encodeURIComponent(S.agent) : "";
+  const st = await getJSON("/api/state" + q);
   S.state = st;
+  S.agent = st.activeAgent || null;
   if (!S.dirty) S.policy = JSON.parse(JSON.stringify(st.policy));
+  renderAgentNav();
   renderChrome();
   renderMission();
   renderControl();
   renderPolicy();
   renderRunTab();
   renderSettings();
+  if ((agentRec() || {}).sidePane === "mailbox") loadMailbox();
+}
+
+/* ------------------------------------------------------------- agents */
+
+/* Switching agent is not a view change. It swaps the system prompt, the tool
+ * set and the policy file all at once, which is the whole reason the rail
+ * lists them separately: you can watch the Policy tab change under you. */
+async function switchAgent(id) {
+  if (id === S.agent || S.busy) return;
+  if (S.dirty && !confirm(
+      "You have unsaved policy changes for this agent. Switch anyway and lose them?"))
+    return;
+  S.agent = id;
+  S.dirty = false;
+  S.turnCalls = 0;
+  S.turnRefused = 0;
+  $("statCalls").textContent = "0";
+  $("statRefused").textContent = "0";
+  await hydrate();
+  renderTranscript();
+}
+
+function renderAgentNav() {
+  const nav = $("agentNav");
+  const agents = (S.state.agents || []).filter((a) => a.enabled);
+  nav.innerHTML = "";
+  // With one agent there is nothing to switch between, and a rail group
+  // containing a single permanently-selected button is just noise.
+  nav.parentElement.querySelectorAll(".rail-label")[1].classList
+    .toggle("hidden", agents.length < 2);
+  if (agents.length < 2) return;
+  for (const a of agents) {
+    const b = el("button", "nav agent" + (a.id === S.agent ? " on" : ""));
+    b.appendChild(el("i", null, ""));
+    b.lastChild.dataset.ic = a.id === "triage" ? "mail" : "panel";
+    b.appendChild(document.createTextNode(a.label));
+    b.title = a.blurb;
+    b.addEventListener("click", () => switchAgent(a.id));
+    nav.appendChild(b);
+  }
 }
 
 function renderChrome() {
@@ -203,6 +255,30 @@ function renderChrome() {
 
   $("hostChip").textContent = st.projectDir || "";
   $("hostChip").title = st.projectDir || "";
+
+  /* The agent's own name, everywhere it is spoken to. A participant named it
+   * in setup; showing them "Assistant" afterwards wastes the one moment the
+   * app felt like theirs. */
+  const prof = st.profile || {};
+  const rec = agentRec();
+  const name = prof.agentName || "Assistant";
+  document.querySelector(".brand-name").textContent = name;
+  document.querySelector(".brand-sub").textContent =
+    rec ? rec.label.toLowerCase() : "local assistant";
+  document.title = name + " - CastleKeep";
+
+  $("chatTitle").textContent = rec && rec.id !== "computer-assist"
+    ? name + " · " + rec.label : name;
+  $("chatSub").textContent = rec
+    ? rec.blurb + " Runs on this machine; nothing you type leaves it."
+    : "Runs on this machine. Nothing you type leaves it.";
+  $("input").placeholder = "Ask " + name + " something…";
+
+  /* The empty state belongs to renderEmptyState, which owns those nodes and
+   * rebuilds them for whichever agent is selected. Writing to them from here
+   * would reach for elements a transcript redraw has already replaced, and
+   * hydrate() runs after every save, every tool run and every agent switch. */
+  if ($("transcript").querySelector(".empty")) renderEmptyState();
 }
 
 /* ---------------------------------------------------------------- mission */
@@ -234,6 +310,12 @@ function policySummary(p) {
 }
 
 function renderMission() {
+  const rec = agentRec() || {};
+  const mail = rec.sidePane === "mailbox";
+  $("sideTitle").textContent = mail ? "Mailbox" : "Mission";
+  $("mailboxView").classList.toggle("hidden", !mail);
+  $("missionView").classList.toggle("hidden", mail);
+
   const box = $("missionPolicy");
   box.innerHTML = "";
   const p = S.state.policy || {};
@@ -266,6 +348,62 @@ function renderMissionRuns(runs) {
     row.appendChild(el("span", null, r.tool || r.label || "run"));
     const t = el("span", "mono right", r.durationMs != null ? r.durationMs + " ms" : "");
     row.appendChild(t);
+    box.appendChild(row);
+  }
+}
+
+/* ------------------------------------------------------------- mailbox */
+
+/* Drawn from a HOST-side read, not from the sandbox. That is deliberate and
+ * worth saying out loud in the room: this pane is a window onto the files, and
+ * the agent's view of the same files is whatever its policy allows. When the
+ * agent is refused a message that is sitting right there on screen, the gap
+ * between the two panes IS the demo. */
+async function loadMailbox() {
+  try {
+    S.mail = await getJSON("/api/mailbox");
+  } catch (e) {
+    return;
+  }
+  const m = S.mail;
+  $("mailboxNote").textContent =
+    m.inbox.length + " in the inbox, " + m.archive.length + " archived" +
+    (m.filed ? ", " + m.filed + " filed (tombstoned - this tier cannot delete)" : "") +
+    (m.privateCount ? ", " + m.privateCount + " in the private folder" : "") + ".";
+
+  drawMail($("mailList"), m.inbox, "The inbox is empty.");
+  drawMail($("draftList"), m.drafts,
+           "No drafts yet. Ask for a reply and one appears here.");
+
+  const cal = $("calList");
+  cal.innerHTML = "";
+  if (!m.calendar.length) cal.appendChild(el("p", "muted", "No days held."));
+  for (const d of m.calendar) {
+    const day = el("div", "mailrow");
+    const b = el("div", "mailbody");
+    b.appendChild(el("div", "msub", d.date));
+    for (const ev of d.events || [])
+      b.appendChild(el("div", "mfrom", ev.start + "-" + ev.end + "  " + ev.title));
+    day.appendChild(b);
+    cal.appendChild(day);
+  }
+}
+
+function drawMail(box, items, emptyText) {
+  box.innerHTML = "";
+  if (!items.length) {
+    box.appendChild(el("p", "muted", emptyText));
+    return;
+  }
+  for (const msg of items) {
+    const row = el("div", "mailrow" + (msg.unread ? " unread" : ""));
+    const b = el("div", "mailbody");
+    b.appendChild(el("div", "mfrom", (msg.from || "").replace(/\s*<.*>$/, "")));
+    b.appendChild(el("div", "msub", msg.subject || "(no subject)"));
+    b.appendChild(el("div", "msnip", msg.snippet || msg.status || ""));
+    row.appendChild(b);
+    row.appendChild(el("span", "mdate", (msg.date || "").slice(5, 10)));
+    row.title = msg.id;
     box.appendChild(row);
   }
 }
@@ -431,11 +569,55 @@ function renderControl() {
 
 function transcriptClear() {
   $("transcript").innerHTML = "";
-  S.history = [];
+  S.histories[S.agent] = [];
   S.turnCalls = 0;
   S.turnRefused = 0;
   $("statCalls").textContent = "0";
   $("statRefused").textContent = "0";
+  renderTranscript();
+}
+
+/* Redraw the conversation for whichever agent is now selected. Switching back
+ * and forth should find each conversation where you left it - the tool-call
+ * detail is not replayed, only the prose, because those sandboxes are long
+ * gone and re-rendering them would imply they were still live. */
+function renderTranscript() {
+  const t = $("transcript");
+  t.innerHTML = "";
+  const h = history();
+  if (!h.length) {
+    renderEmptyState();
+    return;
+  }
+  for (const m of h) {
+    const body = msgNode(m.role);
+    body.appendChild(el("div", "bubble", m.content));
+  }
+  scrollChat();
+}
+
+function renderEmptyState() {
+  const rec = agentRec() || {};
+  const old = $("transcript").querySelector(".empty");
+  if (old) old.remove();
+  const wrap = el("div", "empty");
+  const av = el("span", "avatar lg");
+  av.innerHTML = dragonSvg("idle");
+  wrap.appendChild(av);
+  wrap.appendChild(el("h2", null, rec.id === "triage"
+    ? "What is in your inbox?" : "Ask about this device."));
+  wrap.appendChild(el("p", null,
+    "Every tool call runs in a throwaway container built from " +
+    ((S.state || {}).policyFile || "policy.json") + " as it is at that instant."));
+  const box = el("div", "starters");
+  for (const s of rec.examples || []) {
+    const b = el("button", "starter", s);
+    b.type = "button";
+    b.addEventListener("click", () => send(s));
+    box.appendChild(b);
+  }
+  wrap.appendChild(box);
+  $("transcript").appendChild(wrap);
 }
 
 function msgNode(role) {
@@ -477,7 +659,8 @@ async function send(text) {
   $("stop").classList.remove("hidden");
   S.abort = new AbortController();
 
-  const history = S.history.slice();
+  const sentAgent = S.agent;
+  const priorHistory = history().slice();
   let finalText = "";
 
   const onEvent = (ev) => {
@@ -578,15 +761,21 @@ async function send(text) {
   };
 
   try {
-    await sse("/api/chat", { message: text, history }, onEvent, S.abort.signal);
+    await sse("/api/chat",
+              { message: text, history: priorHistory, agent: sentAgent },
+              onEvent, S.abort.signal);
   } catch (e) {
     if (e.name !== "AbortError")
       body.appendChild(el("div", "errline", String(e.message || e)));
   }
 
-  S.history.push({ role: "user", content: text });
-  if (finalText) S.history.push({ role: "assistant", content: finalText });
-  if (S.history.length > 24) S.history = S.history.slice(-24);
+  // Record against the agent the turn was SENT to, not whatever is selected
+  // now - otherwise an agent switch mid-answer files the reply under the
+  // wrong conversation.
+  const h = (S.histories[sentAgent] = S.histories[sentAgent] || []);
+  h.push({ role: "user", content: text });
+  if (finalText) h.push({ role: "assistant", content: finalText });
+  if (h.length > 24) S.histories[sentAgent] = h.slice(-24);
 
   S.busy = false;
   S.abort = null;
@@ -616,12 +805,7 @@ $("input").addEventListener("input", (e) => {
   e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
 });
 $("stop").addEventListener("click", () => { if (S.abort) S.abort.abort(); });
-$("clearChat").addEventListener("click", () => {
-  transcriptClear();
-  location.reload();
-});
-document.querySelectorAll(".starter").forEach((b) =>
-  b.addEventListener("click", () => send(b.textContent)));
+$("clearChat").addEventListener("click", () => transcriptClear());
 
 /* ====================================================================== */
 /* policy editor                                                           */
@@ -701,7 +885,46 @@ function pathEditor(kind, capKey) {
 function renderPolicy() {
   const form = $("policyForm");
   const p = S.policy;
+  const rec = agentRec();
   form.innerHTML = "";
+
+  /* Say which agent and which file, loudly. With more than one policy on disk
+   * the single most likely mistake in the room is editing the right form and
+   * saving it over the wrong file. */
+  $("policyAgent").textContent = rec ? rec.label : "";
+  $("policyAgent").className = "chip plain" + (rec ? "" : " hidden");
+  $("policyFile").textContent = (S.state || {}).policyFile || "policy.json";
+
+  /* presets */
+  if (rec && (rec.presets || []).length) {
+    let pg = el("div", "group");
+    pg.appendChild(el("h3", null, "Start from a suggested policy"));
+    pg.appendChild(el("p", "gsub",
+      "Replaces everything below. A preset cannot grant anything you could not " +
+      "type into this same form by hand - it is a starting point, not a " +
+      "privileged one."));
+    const row = el("div", "presetrow");
+    for (const pr of rec.presets) {
+      const b = el("button", "presetbtn" + (p.name === pr.id ? "" : ""));
+      b.type = "button";
+      b.appendChild(el("b", null, pr.label));
+      b.appendChild(el("span", null, pr.summary));
+      b.addEventListener("click", async () => {
+        if (!confirm('Replace ' + ($("policyFile").textContent) + ' with the "' +
+                     pr.label + '" preset? Your current edits to it are lost.'))
+          return;
+        const { ok } = await postJSON("/api/policy/preset",
+                                      { agent: S.agent, preset: pr.id });
+        if (!ok) return toast("Could not apply that preset.", true);
+        S.dirty = false;
+        await hydrate();
+        toast('Applied "' + pr.label + '". The next tool call will use it.');
+      });
+      row.appendChild(b);
+    }
+    pg.appendChild(row);
+    form.appendChild(pg);
+  }
 
   /* paths */
   let g = el("div", "group");
@@ -848,8 +1071,14 @@ function renderLint(lint) {
   box.appendChild(wrap);
 }
 
+/* Every policy call carries the agent id. Without it "Save" on a page showing
+ * policies\triage.json would write policy.json, which is the single most
+ * expensive bug this feature could have: it would look like it worked. */
+const agentQ = () => (S.agent ? "?agent=" + encodeURIComponent(S.agent) : "");
+
 async function refreshPreview() {
-  const { body } = await postJSON("/api/policy/preview", { policy: S.policy });
+  const { body } = await postJSON("/api/policy/preview" + agentQ(),
+                                  { policy: S.policy });
   if (body.error) {
     $("policyJson").textContent = body.error;
     return;
@@ -861,7 +1090,7 @@ async function refreshPreview() {
 }
 
 $("savePolicy").addEventListener("click", async () => {
-  const { ok, body } = await postJSON("/api/policy", S.policy);
+  const { ok, body } = await postJSON("/api/policy" + agentQ(), S.policy);
   if (!ok) {
     renderLint(body.lint || []);
     toast("Not saved - fix the errors first.", true);
@@ -869,24 +1098,27 @@ $("savePolicy").addEventListener("click", async () => {
   }
   S.dirty = false;
   $("savePolicy").textContent = "Save";
-  toast("Saved. The next tool call will use it.");
+  toast("Saved to " + (body.policyFile || "policy.json") +
+        ". The next tool call will use it.");
   await hydrate();
 });
 
 $("revertPolicy").addEventListener("click", async () => {
+  const file = (S.state || {}).policyFile || "policy.json";
   S.dirty = false;
   $("savePolicy").textContent = "Save";
   await hydrate();
-  toast("Reverted to policy.json on disk.");
+  toast("Reverted to " + file + " on disk.");
 });
 
 $("dryRun").addEventListener("click", async () => {
+  const file = (S.state || {}).policyFile || "policy.json";
   if (S.dirty) {
-    toast("Save first - dry-run reads policy.json from disk.", true);
+    toast("Save first - dry-run reads " + file + " from disk.", true);
     return;
   }
   term("\n$ wxc-exec --dry-run   (parse and validate, nothing spawned)\n", "d");
-  const { body } = await postJSON("/api/policy/dryrun", {});
+  const { body } = await postJSON("/api/policy/dryrun" + agentQ(), {});
   const r = body.run || {};
   if (r.outcome === "ok") {
     toast("wxc-exec accepted this policy.");
@@ -986,7 +1218,7 @@ $("toolGo").addEventListener("click", async () => {
   term("\n$ " + name + " " + JSON.stringify(args) + "\n", "b");
   $("toolGo").disabled = true;
   try {
-    await sse("/api/tool", { name, arguments: args }, (ev) => {
+    await sse("/api/tool", { name, arguments: args, agent: S.agent }, (ev) => {
       if (ev.type === "tool_call") {
         term("  command  " + ev.command + "\n", "d");
         for (const n of ev.notes || []) term("  " + n.level + "  " + n.message + "\n", "y");
@@ -1115,7 +1347,18 @@ function renderSettings() {
     ["Network dialect", st.dialect],
     ["Project", st.projectDir],
     ["Workspace", st.workspace],
+    ["Mailbox", st.mailbox],
   ]);
+
+  const prof = st.profile;
+  mini("profileCard", prof ? [
+    ["You", prof.userName || "(not given)"],
+    ["Agent name", prof.agentName],
+    ["Subagents", (prof.subagents || []).join(", ")],
+    ["Policy files", (prof.subagents || [])
+      .map((id) => (st.agents.find((a) => a.id === id) || {}).policyFile)
+      .filter(Boolean).join("   ")],
+  ] : [["Setup", "Not done yet - the launch screen will offer it."]]);
 
   const notes = $("notesCard");
   notes.innerHTML = "";
@@ -1146,6 +1389,14 @@ function renderSettings() {
   ].forEach((t) => about.appendChild(el("p", null, t)));
 }
 
+$("resetProfile").addEventListener("click", async () => {
+  if (!confirm("Forget your name, your agent's name and which subagents are on?" +
+               "\n\nYour policy files are left exactly as they are."))
+    return;
+  await postJSON("/api/profile/reset", {});
+  location.href = "/onboard";
+});
+
 $("rescan").addEventListener("click", async () => {
   $("rescan").disabled = true;
   await postJSON("/api/rescan", {});
@@ -1160,6 +1411,15 @@ $("rescan").addEventListener("click", async () => {
 
 setDragon("idle");
 showTab((location.hash || "#assistant").slice(1) || "assistant");
-hydrate().catch((e) => {
+hydrate().then(() => {
+  // Somebody who has never been through setup lands here with no profile -
+  // usually by bookmarking /app. Send them to the front of the queue rather
+  // than letting them wonder why the agent has no name.
+  if (!S.state.profile) {
+    location.href = "/onboard";
+    return;
+  }
+  renderTranscript();
+}).catch((e) => {
   toast("Could not reach the CastleKeep server: " + e.message, true);
 });

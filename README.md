@@ -7,11 +7,11 @@ loop runs on your machine. And every single thing the agent tries to *do* runs
 inside a throwaway Microsoft MXC sandbox built from a policy file you can edit
 while the app is running.
 
-The point of the exercise is the refusals. You will ask Assistant to read something
-it should not be able to read, and watch the sandbox stop it. Then you will
-change one line of policy, ask again, and watch it work. Nothing in this app
-simulates that. If the screen says a sandbox refused something, a sandbox
-refused something.
+The point of the exercise is the refusals. You will ask your agent to read
+something it should not be able to read - a file, or a thread in your private
+mail - and watch the sandbox stop it. Then you will change one line of policy,
+ask again, and watch it work. Nothing in this app simulates that. If the
+screen says a sandbox refused something, a sandbox refused something.
 
 Windows only. Python 3.9 or newer. No pip install. It is stdlib on purpose,
 so it survives conference wifi and a locked-down laptop.
@@ -92,6 +92,48 @@ The app itself is `/app` and the terminal walkthrough is `/phase1`.
 `--no-browser` and `--port` do what you expect. `python run.py --check` prints
 the host report and exits.
 
+## Setting up your agent
+
+The first time through, the launch screen sends you to `/onboard` instead of
+straight into the app. Four questions: your name, what you want to call your
+agent, which subagents to turn on, and a starting policy for each.
+
+That last one is the point. You are told what each preset grants and what it
+will refuse, and you choose, **before** the agent has done anything. An agent
+you named and whose permissions you picked is one you argue with; an agent
+called Assistant is a product you assume somebody else secured.
+
+It writes `profile.json` and one policy file per subagent under `policies\`.
+Neither is in git - forty people clone the same repo, and the name you type is
+yours. A preset cannot grant anything the Policy tab could not; it is a
+starting point, not a privileged one. Settings has a reset, and the Policy tab
+offers the same presets later.
+
+## Two subagents
+
+**Computer Assist** looks after the device: files, disk, processes. This is
+the agent CastleKeep shipped with.
+
+**Triage** reads your email and calendar and tells you what matters. The
+mailbox is a folder of JSON files under `mailbox\`, laid down on first run
+from `workshop\mailbox-seed.json` - a snapshot of a Gmail account made for
+this workshop. **You never log in to anything**, and there is no credential in
+this repo.
+
+Mail-as-files is not a shortcut around doing it properly; it is the only shape
+that makes the lesson expressible. The sandbox cannot usefully reach the
+network for this - `hostLoopback` is only grantable on BaseContainer, and
+`verify.py` measures that a contained process cannot reach loopback on the
+tiers most machines get. On disk, "read my inbox but only write to drafts" is
+one line of `paths.read` and one of `paths.write`, enforced by the same
+machinery that refuses a read of `C:\Users`. The full reasoning, including why
+pointing the room at live shared IMAP ends with a locked Google account, is at
+the top of `core\mailbox.py`.
+
+Each subagent has its own prompt, its own tools and its own policy file.
+Switching between them in the rail swaps all three at once, and the Policy tab
+names the file it is editing so you can see it change.
+
 ## Phase 1, if you are running this as a workshop
 
 `http://127.0.0.1:7701/phase1` is a seven-step terminal walkthrough that
@@ -113,16 +155,19 @@ Point a demo at a real credential exactly once and you will understand why.
 
 ## The five tabs
 
-**Assistant** is the chat tab. Ask it what kind of machine this is, how
-much disk is free, what is eating memory. Each answer involves a real tool
-call, and each tool call spawns a real sandbox, and you can watch them arrive
-inline, with the command and the exact configuration that was sent.
+**Chat** is where you talk to whichever subagent the rail has selected. Ask
+Computer Assist what kind of machine this is, or ask Triage what came in that
+needs you today. Each answer involves a real tool call, and each tool call
+spawns a real sandbox, and you can watch them arrive inline, with the command
+and the exact configuration that was sent.
 
 **Control Panel** is the honest view: the tier this host actually gave you,
 which knobs it can enforce, every tool and what it needs, and a running list of
 everything that has been refused and by whom.
 
-**Policy** is the file. Edit paths, flip network off, switch tools on and off.
+**Policy** is the file - the selected subagent's, named at the top of the
+tab. Edit paths, flip network off, switch tools on and off, or start again
+from one of the presets.
 Knobs this host cannot enforce are disabled with the reason attached, rather
 than silently doing nothing. Save, and the change lands on the agent's very
 next tool call. No restart, no reload. Each call re-reads the file from disk
@@ -130,10 +175,24 @@ and compiles a fresh sandbox configuration from it.
 
 **Run** is the terminal view, if you would rather watch it that way.
 
-**Settings** is the model and the executor.
+**Settings** is the model, the executor, and your setup - including a reset
+if somebody else needs the machine next.
 
-You can also just edit `policy.json` in a text editor. It is the same file, and
-it is commented. `COMPILED.md` explains what each field becomes on the wire.
+You can also just edit the files in `policies\` in a text editor. They are the
+same files the tab writes, and the root `policy.json` they are modelled on is
+commented. `COMPILED.md` explains what each field becomes on the wire.
+
+## If you would rather see it than read it
+
+`ARCHITECTURE.md` draws the whole system: the trust boundary, one tool call end
+to end, onboarding, what a subagent actually is, where the mail comes from, and
+the three kinds of refusal. The diagrams are Mermaid, which GitHub renders
+inline and VS Code renders with the *Markdown Preview Mermaid Support*
+extension.
+
+If you would rather not install anything, run the app and open
+**`/architecture`** - the same diagrams in plain HTML and CSS, no extension and
+no CDN. Settings links to it.
 
 ## Three ways to be told no
 
@@ -151,8 +210,8 @@ MXC refused the access. This is the real thing.
 rejected. Usually you asked for something this backend does not implement.
 The refusal names the offending field.
 
-Assistant is told the difference too, in plain language, along with an instruction
-not to go looking for a way around it.
+The agent is told the difference too, in plain language, along with an
+instruction not to go looking for a way around it.
 
 ## What this does not do
 

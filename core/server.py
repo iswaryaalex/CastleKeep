@@ -16,7 +16,10 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import agents as agents_mod
+from . import mailbox as mailbox_mod
 from . import policy as policy_mod
+from . import profile as profile_mod
 from . import tools as tools_mod
 from . import verify as verify_mod
 from .agent import Agent
@@ -28,6 +31,7 @@ PAGES = {
     "/": "/launch.html",
     "/app": "/index.html",
     "/launch": "/launch.html",
+    "/onboard": "/onboard.html",
 }
 
 
@@ -119,10 +123,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- GET --------------------------------------------------------------
 
+    def _agent_param(self):
+        """Which subagent this request is about.
+
+        Absent means the active one from the profile. An explicit empty string
+        means the root policy.json - that is how Phase 1 and anything written
+        before subagents existed keep addressing the file they always meant."""
+        # keep_blank_values, because "?agent=" is a meaningful request - it
+        # means the root policy.json - and the default would silently drop it
+        # and hand back the active agent's policy instead.
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query,
+                                  keep_blank_values=True)
+        if "agent" not in q:
+            return self.app.active_agent()
+        return q["agent"][0] or None
+
     def _api_get(self, path):
         app = self.app
         if path == "/api/state":
-            pol = app.reload_policy()
+            agent_id = self._agent_param()
+            pol = app.reload_policy(agent_id)
             # config.json gets the same treatment as policy.json: edited on
             # disk, picked up on the next poll. The UI should never be able to
             # disagree with the file about which model it is talking to.
@@ -131,6 +151,11 @@ class Handler(BaseHTTPRequestHandler):
                 "version": "1.0.0",
                 "projectDir": app.project_dir,
                 "workspace": app.workspace,
+                "mailbox": app.mailbox,
+                "profile": app.profile,
+                "agents": agents_mod.describe(app.profile),
+                "activeAgent": agent_id,
+                "policyFile": app.rel_policy_path(agent_id),
                 "probe": app.probe,
                 "capabilities": app.caps,
                 "dialect": app.dialect,
@@ -140,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
                 "warmup": app.warmup_state(),
                 "policy": pol,
                 "lint": policy_mod.lint(pol, app.path_ctx(), app.caps),
-                "tools": tools_mod.describe(pol),
+                "tools": tools_mod.describe(pol, agent_id),
                 "paths": app.path_ctx(),
                 "runs": app.recent_runs(),
                 "refusals": app.refusals(),
@@ -154,7 +179,17 @@ class Handler(BaseHTTPRequestHandler):
                                "warmup": app.warmup_state(),
                                "notes": app.startup_notes})
         if path == "/api/policy":
-            return self._json(app.reload_policy())
+            return self._json(app.reload_policy(self._agent_param()))
+        if path == "/api/profile":
+            return self._json({"profile": app.profile,
+                               "agents": agents_mod.describe(app.profile)})
+        if path == "/api/mailbox":
+            # Host-side read, not sandboxed - exactly like Lemonade. This
+            # draws the pane so somebody can see what the agent is working on.
+            # It is NOT how the agent reads mail: that goes through the tools,
+            # into a sandbox, under the policy. If this pane and the agent
+            # disagree about what is readable, the policy is working.
+            return self._json(mailbox_mod.summary(app.mailbox))
         if path == "/api/runs":
             return self._json({"runs": app.recent_runs(200)})
         if path == "/api/refusals":
@@ -170,17 +205,40 @@ class Handler(BaseHTTPRequestHandler):
     def _api_post(self, path):
         app = self.app
 
+        if path == "/api/profile":
+            body = self._body()
+            saved, written = app.set_profile(body)
+            return self._json({"profile": saved, "policiesWritten": written,
+                               "agents": agents_mod.describe(saved)})
+
+        if path == "/api/profile/reset":
+            profile_mod.clear(app.project_dir)
+            app.profile = None
+            return self._json({"ok": True})
+
         if path == "/api/policy":
+            agent_id = self._agent_param()
             incoming = self._body()
             lint = policy_mod.lint(incoming, app.path_ctx(), app.caps)
             if any(n["level"] == "error" for n in lint):
                 return self._json({"saved": False, "lint": lint}, 400)
-            saved = app.save_policy(incoming)
-            return self._json({"saved": True, "policy": saved, "lint": lint})
+            saved = app.save_policy(incoming, agent_id)
+            return self._json({"saved": True, "policy": saved, "lint": lint,
+                               "policyFile": app.rel_policy_path(agent_id)})
+
+        if path == "/api/policy/preset":
+            body = self._body()
+            agent_id = body.get("agent") or self._agent_param()
+            saved = app.apply_preset(agent_id, body.get("preset"))
+            if saved is None:
+                return self._json({"error": "no such preset"}, 404)
+            return self._json({"saved": True, "policy": saved,
+                               "lint": policy_mod.lint(saved, app.path_ctx(),
+                                                       app.caps)})
 
         if path == "/api/policy/preview":
             body = self._body()
-            pol = body.get("policy") or app.reload_policy()
+            pol = body.get("policy") or app.reload_policy(self._agent_param())
             cmd = body.get("command") or tools_mod.shell_cmd("dir /b")
             try:
                 cfg, notes = app.compile_for(pol, cmd)
@@ -190,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
                                "lint": policy_mod.lint(pol, app.path_ctx(), app.caps)})
 
         if path == "/api/policy/dryrun":
-            pol = app.reload_policy()
+            pol = app.reload_policy(self._agent_param())
             cfg, notes = app.compile_for(pol, tools_mod.shell_cmd("ver"))
             run = app.mxc.execute(cfg, label="policy dry-run", dry_run=True)
             app.record_run(run)
@@ -243,7 +301,7 @@ class Handler(BaseHTTPRequestHandler):
                            "Loading %s into memory - the first answer will be "
                            "slow, the rest will not." % (w.get("model") or "the model")})
 
-            agent = Agent(app)
+            agent = Agent(app, body.get("agent"))
             try:
                 agent.turn(body.get("message") or "",
                            body.get("history") or [], self._sse)
@@ -257,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/tool":
             body = self._body()
             self._sse_open()
-            agent = Agent(app)
+            agent = Agent(app, body.get("agent"))
             try:
                 text = agent.call_tool(body.get("name") or "",
                                        body.get("arguments") or {}, self._sse)

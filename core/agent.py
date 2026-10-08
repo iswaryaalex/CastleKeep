@@ -14,30 +14,28 @@ contains what the agent *does*, not what the agent *is*.
 
 import json
 import os
+import re
 import time
 
+from . import agents as agents_mod
 from . import policy as policy_mod
 from . import tools as tools_mod
 
-SYSTEM = """You are Assistant, the agent inside CastleKeep. You help the person \
-in front of you understand and fix their own Windows device.
+_TAG = re.compile(r"<[^>]+>")
 
-How you work:
-- You run entirely on this machine. The model is served locally by Lemonade. \
-Nothing the person says goes to the internet.
-- You have tools. Every tool call runs inside a fresh, throwaway sandbox with \
-a security policy the person controls. You do not control that policy and you \
-cannot work around it.
-- If a tool comes back refused, say so plainly and say which rule stopped it. \
-Do not retry the same thing. Do not pretend you got the data. If the person \
-wants that access, tell them which knob in the Policy tab to change.
 
-How you answer:
-- Short. A sentence or two of plain prose, then the finding.
-- Give real numbers when you have them. Never invent one.
-- When you spot something worth fixing, say what you would do and ask before \
-doing it.
-"""
+def _plain(text):
+    """PowerShell serialises its streams as CLIXML when stderr is redirected,
+    so a refusal arrives wrapped in markup. The model does not need the markup,
+    and the 400-character budget below is far too small to spend on it - the
+    real message would be pushed off the end by the XML preamble."""
+    s = str(text or "")
+    if "CLIXML" not in s and "<Objs" not in s:
+        return s
+    s = _TAG.sub(" ", s.replace("#< CLIXML", ""))
+    # PowerShell escapes its own newlines in the serialised form.
+    s = s.replace("_x000D__x000A_", " ").replace("_x000A_", " ")
+    return " ".join(s.split())
 
 
 def _fmt_result(run, tool_name, notes):
@@ -54,7 +52,7 @@ def _fmt_result(run, tool_name, notes):
             "security policy stopped it: %s. Detail: %s\n"
             "Tell the user this was blocked and which policy rule would need to "
             "change. Do not try the same path again."
-            % (run.get("reason"), (run.get("detail") or "")[:400])
+            % (run.get("reason"), _plain(run.get("detail"))[:400])
         )
 
     if outcome == "refused-to-start":
@@ -67,13 +65,17 @@ def _fmt_result(run, tool_name, notes):
                (" (field: %s)" % run["offendingField"]) if run.get("offendingField") else "")
         )
 
-    tail = ((run.get("stderr") or "") + (run.get("stdout") or "")).strip()
+    tail = _plain((run.get("stderr") or "") + (run.get("stdout") or "")).strip()
     return "The command failed (exit %s). %s" % (run.get("exitCode"), tail[:1500])
 
 
 class Agent:
-    def __init__(self, app):
+    def __init__(self, app, agent_id=None):
         self.app = app              # core.app.App
+        # Which subagent this is. Everything that used to be a module constant
+        # - the prompt, the tool set, the policy file - now hangs off this.
+        self.agent_id = agent_id or app.active_agent()
+        self.record = agents_mod.get(self.agent_id)
 
     # -- one tool call ----------------------------------------------------
 
@@ -84,15 +86,16 @@ class Agent:
         # Re-read the policy from disk for THIS call. Not cached, not
         # inherited from the start of the turn. This is what makes an edit in
         # the Policy tab land on the very next tool call.
-        pol = app.reload_policy()
+        pol = app.reload_policy(self.agent_id)
         gate = (pol.get("tools") or {})
-        tool = tools_mod.BY_NAME.get(name)
+        mine = {t.name: t for t in tools_mod.for_agent(self.agent_id)}
+        tool = mine.get(name)
 
         if tool is None:
             emit({"type": "tool_result", "name": name, "outcome": "unknown-tool",
                   "text": "No such tool."})
-            return "There is no tool called %r. Available: %s" % (
-                name, ", ".join(sorted(tools_mod.BY_NAME)))
+            return "There is no tool called %r available to %s. Available: %s" % (
+                name, self.record["label"], ", ".join(sorted(mine)))
 
         if not gate.get(name, not tool.danger):
             rec = {
@@ -112,13 +115,14 @@ class Agent:
                     "in the Policy tab." % rec["reason"])
 
         try:
-            command, tool = tools_mod.build_command(name, arguments)
+            command, tool = tools_mod.build_command(name, arguments, app.path_ctx())
         except Exception as e:
             return "Could not build that command: %s" % e
 
         cfg, notes = app.compile_for(pol, command)
         emit({"type": "tool_call", "name": name, "arguments": arguments,
-              "command": command, "config": cfg, "notes": notes})
+              "command": command, "config": cfg, "notes": notes,
+              "agent": self.agent_id})
 
         run = app.mxc.execute(cfg, label=name,
                               timeout=(pol.get("limits") or {}).get("timeoutMs", 30000)
@@ -126,6 +130,7 @@ class Agent:
         run["arguments"] = arguments
         run["notes"] = notes
         run["tool"] = name
+        run["agent"] = self.agent_id
         app.record_run(run)
         emit({"type": "sandbox", "run": _public(run)})
 
@@ -138,10 +143,12 @@ class Agent:
 
     def turn(self, user_text, history, emit):
         app = self.app
-        pol = app.reload_policy()
-        schemas = tools_mod.schemas(pol)
+        pol = app.reload_policy(self.agent_id)
+        schemas = tools_mod.schemas(pol, self.agent_id)
 
-        messages = [{"role": "system", "content": SYSTEM + _policy_briefing(pol, app)}]
+        system = agents_mod.system_prompt(self.agent_id, app.profile)
+        messages = [{"role": "system",
+                     "content": system + _policy_briefing(pol, app, self.agent_id)}]
         messages += history
         messages.append({"role": "user", "content": user_text})
 
@@ -217,12 +224,13 @@ def _public(run):
     return out
 
 
-def _policy_briefing(pol, app):
+def _policy_briefing(pol, app, agent_id=None):
     """Tell the model what it can and cannot reach, in the model's own terms.
     This is not enforcement - MXC is enforcement - it just stops the model
     wasting turns on things that will certainly be refused."""
     p = policy_mod.normalise(pol)
     ctx = app.path_ctx()
+    mine = {t.name for t in tools_mod.for_agent(agent_id)}
 
     def show(kind):
         vals = p["paths"].get(kind) or []
@@ -242,8 +250,7 @@ def _policy_briefing(pol, app):
                  % (p["network"].get("outbound") or "deny"))
     lines.append("- Tool call timeout: %ss"
                  % int((p["limits"].get("timeoutMs") or 30000) / 1000))
-    off = [n for n, t in (p.get("tools") or {}).items()
-           if n in tools_mod.BY_NAME and not t]
+    off = [n for n, t in (p.get("tools") or {}).items() if n in mine and not t]
     if off:
         lines.append("- Switched off entirely: %s" % ", ".join(sorted(off)))
     lines.append("Anything not listed as readable is not readable. Do not "

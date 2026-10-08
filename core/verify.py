@@ -194,8 +194,12 @@ def run_all(app, include_network=True):
     def live(sid, title, command, expect, detail_ok="", pol=None):
         """expect is 'ok' or 'denied'. Returns the run."""
         p = pol or app.reload_policy()
+        # The cwd has to be somewhere this policy grants. Hardcoding the
+        # workspace works only while every policy happens to grant it; a
+        # sandbox launched with an ungranted cwd dies at CreateProcessW and
+        # reports it as the command being refused.
         cfg, _ = policy_mod.compile_config(
-            p, ctx, command, cwd=app.workspace, dialect=app.dialect,
+            p, ctx, command, cwd=app.working_dir(p), dialect=app.dialect,
             caps=app.caps, capture_dir=app.capture_dir)
         run = app.mxc.execute(cfg, label=title)
         app.record_run(run)
@@ -357,15 +361,54 @@ def run_all(app, include_network=True):
         "list_processes": {"top": 3},
         "fetch_url": None,
         "run_command": None,
+        # The triage tools read and write the mailbox, which the root
+        # policy.json does not grant, so they run under the triage policy
+        # instead. Skipping them with "covered by the checks above" would be
+        # a lie: nothing above touches ${mailbox}.
+        "list_messages": {},
+        "read_message": {"id": "2026-10-06-northwind-invoice"},
+        "search_mail": {"query": "invoice"},
+        "list_events": {},
+        "find_free_slot": {},
+        "draft_reply": {"subject": "verify", "body": "verify\n"},
+        "draft_invite": {"title": "verify", "date": "2026-10-09", "start": "09:00"},
+        "archive_message": None,
+        "label_message": None,
     }
+
+    # Why a tool was skipped, where "covered above" would not be true.
+    skip_why = {
+        "move_file":
+            "Cannot work on this tier at all: a read-write grant carries "
+            "create and write but not DELETE, so move is refused even inside "
+            "one granted folder. Not a policy anybody chose.",
+        "archive_message":
+            "Needs a write grant on ${mailbox}\\archive, which the default "
+            "triage policy deliberately withholds. That refusal is the demo - "
+            "asserting 'ok' here would make this report contradict the "
+            "workshop. Grant it in the Policy tab and it succeeds.",
+        "label_message":
+            "Needs a write grant on ${mailbox}\\labels, which the default "
+            "triage policy deliberately withholds. Same reason as "
+            "archive_message.",
+    }
+    has_triage = os.path.isfile(app.policy_path_for("triage"))
+    triage_pol = app.reload_policy("triage") if has_triage else None
     for t in tools_mod.CATALOGUE:
         args = sample.get(t.name)
         if args is None:
             yield emit(_step("tool:" + t.name, "Tool: %s" % t.name, "skip",
-                             "Covered by the checks above."))
+                             skip_why.get(t.name, "Covered by the checks above.")))
             continue
+        if t.agent == "triage" and not has_triage:
+            yield emit(_step("tool:" + t.name, "Tool: %s" % t.name, "skip",
+                             "No policies\\triage.json yet - run through setup "
+                             "in the app first, then re-run this."))
+            continue
+        pol = triage_pol if t.agent == "triage" else None
         run, ev = live("tool:" + t.name, "Tool: %s" % t.name,
-                       t.build(args), "ok", "Returned usable output.")
+                       t.build(args, ctx), "ok", "Returned usable output.",
+                       pol=pol)
         if ev["status"] == "fail":
             ev["status"] = "warn"
             ev["detail"] += ("  This tool will report a refusal to the model "

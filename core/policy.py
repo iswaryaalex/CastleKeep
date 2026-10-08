@@ -33,11 +33,15 @@ class PolicyError(Exception):
 _VAR = re.compile(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
-def path_context(project_dir, workspace_dir):
+def path_context(project_dir, workspace_dir, mailbox_dir=None):
     env = os.environ
     return {
         "project": project_dir,
         "workspace": workspace_dir,
+        # The triage subagent's whole world. Kept out of ${workspace} on
+        # purpose: granting the workspace should not silently grant somebody's
+        # mail, and the two want different read/write shapes anyway.
+        "mailbox": mailbox_dir or os.path.join(project_dir, "mailbox"),
         "home": env.get("USERPROFILE") or os.path.expanduser("~"),
         "windir": env.get("WINDIR") or env.get("SystemRoot") or r"C:\Windows",
         "system32": os.path.join(env.get("WINDIR") or env.get("SystemRoot")

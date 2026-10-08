@@ -29,7 +29,12 @@
   <nav class="rail">
     <div class="rail-label">Workspace</div>
     <div class="rail-chip" id="hostChip">&hellip;</div>
-    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Assistant</button>
+
+    <div class="rail-label">Agents</div>
+    <div id="agentNav"></div>
+
+    <div class="rail-label">Views</div>
+    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Chat</button>
     <button class="nav" data-tab="control"><i data-ic="panel"></i>Control Panel</button>
     <button class="nav" data-tab="policy"><i data-ic="shield"></i>Policy</button>
     <button class="nav" data-tab="run"><i data-ic="terminal"></i>Run</button>
@@ -48,44 +53,63 @@
         <div class="pane-head">
           <span class="avatar sm" id="chatDragon"></span>
           <div>
-            <h1>Assistant</h1>
-            <p class="sub">Runs on this machine. Nothing you type leaves it.</p>
+            <h1 id="chatTitle">Assistant</h1>
+            <p class="sub" id="chatSub">Runs on this machine. Nothing you type leaves it.</p>
           </div>
           <button class="btn ghost right" id="clearChat">New conversation</button>
         </div>
+        <!-- The empty state below is a placeholder for the moment before the
+             first hydrate. renderEmptyState() in app.js replaces it wholesale
+             with one built for the selected subagent. -->
         <div class="transcript" id="transcript">
           <div class="empty">
             <span class="avatar lg" id="emptyDragon"></span>
-            <h2>Ask about this device.</h2>
-            <p>Assistant can look around inside a sandbox you control. Every tool call
-               runs in a throwaway container built from <code>policy.json</code>
-               as it is at that instant.</p>
-            <div class="starters">
-              <button class="starter">Give this machine a quick check-up.</button>
-              <button class="starter">How much disk space is left, and what is eating it?</button>
-              <button class="starter">Try to read a file you are not allowed to read, so I can see what happens.</button>
-              <button class="starter">Can you reach the internet from inside the sandbox?</button>
-            </div>
+            <h2>Ask your agent something.</h2>
+            <p>Every tool call runs in a throwaway container built from this
+               agent's policy file as it is at that instant.</p>
           </div>
         </div>
         <form class="composer" id="composer">
-          <textarea id="input" rows="1" placeholder="Ask Assistant something about this device&hellip;"></textarea>
+          <textarea id="input" rows="1" placeholder="Ask something&hellip;"></textarea>
           <button class="btn primary" id="send" type="submit">Send</button>
           <button class="btn danger hidden" id="stop" type="button">Stop</button>
         </form>
       </section>
 
       <aside class="pane side">
-        <div class="pane-head"><h1>Mission</h1></div>
+        <div class="pane-head">
+          <h1 id="sideTitle">Mission</h1>
+        </div>
         <div class="scroll" id="missionScroll">
-          <div class="card">
-            <div class="card-title">In force right now</div>
-            <div id="missionPolicy" class="mini"></div>
-            <button class="btn ghost full" data-goto="policy">Change the policy</button>
+          <!-- The mailbox, shown only for agents whose side pane is the
+               mailbox. Read on the HOST, not through the sandbox - so if this
+               shows a message the agent was refused, that gap is the policy
+               doing its job, not a bug. -->
+          <div id="mailboxView" class="hidden">
+            <div class="card">
+              <div class="card-title">Mailbox</div>
+              <p class="card-sub" id="mailboxNote"></p>
+              <div class="maillist" id="mailList"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Calendar</div>
+              <div class="maillist" id="calList"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Drafts</div>
+              <div class="maillist" id="draftList"></div>
+            </div>
           </div>
-          <div class="card">
-            <div class="card-title">Sandbox activity</div>
-            <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
+          <div id="missionView">
+            <div class="card">
+              <div class="card-title">In force right now</div>
+              <div id="missionPolicy" class="mini"></div>
+              <button class="btn ghost full" data-goto="policy">Change the policy</button>
+            </div>
+            <div class="card">
+              <div class="card-title">Sandbox activity</div>
+              <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
+            </div>
           </div>
         </div>
       </aside>
@@ -142,9 +166,10 @@
       <section class="pane">
         <div class="pane-head">
           <div>
-            <h1>Policy</h1>
-            <p class="sub">Fixed the moment a sandbox starts. An edit here
-               reaches the next tool call, never one already running.</p>
+            <h1>Policy <span class="chip plain" id="policyAgent"></span></h1>
+            <p class="sub">Editing <code id="policyFile">policy.json</code>.
+               Fixed the moment a sandbox starts - an edit here reaches the next
+               tool call, never one already running.</p>
           </div>
           <div class="right">
             <button class="btn ghost" id="revertPolicy">Revert</button>
@@ -224,6 +249,19 @@
           <div id="exeCard" class="mini"></div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-title">Your setup</div>
+        <p class="card-sub">Lives in <code>profile.json</code>, which is not in
+           git. Re-running setup leaves any policy file that already exists
+           alone - your edits are the interesting artefact and overwriting them
+           would be the rudest thing this button could do.</p>
+        <div id="profileCard" class="mini"></div>
+        <div class="row-btns">
+          <a class="btn ghost" href="/onboard">Change names and agents</a>
+          <button class="btn ghost" id="resetProfile">Reset setup</button>
+        </div>
+      </div>
       <div class="card">
         <div class="card-title">Startup notes</div>
         <div id="notesCard" class="feed"></div>
@@ -232,6 +270,10 @@
       <div class="card">
         <div class="card-title">How this is put together</div>
         <div class="prose" id="aboutCard"></div>
+        <div class="row-btns">
+          <a class="btn ghost" href="/architecture" target="_blank"
+             rel="noopener">Diagrams of all of this</a>
+        </div>
       </div>
     </div>
   </main>
