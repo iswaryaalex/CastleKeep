@@ -38,7 +38,74 @@ def _plain(text):
     return " ".join(s.split())
 
 
-def _fmt_result(run, tool_name, notes):
+def _covered(path, grants):
+    p = os.path.normcase(os.path.normpath(path))
+    for g in grants:
+        g = os.path.normcase(os.path.normpath(g))
+        if p == g or p.startswith(g + os.sep):
+            return True
+    return False
+
+
+def _grant_diagnosis(tool, arguments, pol, ctx):
+    """Which grant was actually missing, in the policy's own words.
+
+    Windows will not tell you. PowerShell reports a refused write to
+    mailbox\\labels as "Access to the path 'C:\\Users' is denied", naming the
+    first directory it could not traverse rather than the one you asked for.
+    Handed that, a model confidently blames whichever path it can see in the
+    error and sends the user to change a rule that was never the problem.
+
+    This runs only after MXC has already refused. It explains the refusal; it
+    does not make it."""
+    if tool is None or tool.paths is None:
+        return ""
+    try:
+        want = tool.paths(arguments or {}, ctx)
+    except Exception:
+        return ""
+
+    p = policy_mod.normalise(pol)
+
+    def grants(kind):
+        out = []
+        for raw in p["paths"].get(kind) or []:
+            try:
+                out.append(policy_mod.expand(raw, ctx))
+            except policy_mod.PolicyError:
+                continue
+        return out
+
+    write = grants("write")
+    # A read-write grant implies read. compile_config drops the duplicate
+    # readonly entry, so the readable set has to be the union here too.
+    read = grants("read") + write
+
+    missing = []
+    for path in want.get("write") or []:
+        if not _covered(path, write):
+            missing.append(("write", path))
+    for path in want.get("read") or []:
+        if not _covered(path, read):
+            missing.append(("read", path))
+    if not missing:
+        return ""
+
+    lines = ["", "Which grant was missing:"]
+    for kind, path in missing:
+        lines.append("- No %s access to %s. The policy would need that path "
+                     "added to paths.%s." % (kind, path, kind))
+    lines.append("The policy currently grants write on: %s."
+                 % (", ".join(write) or "nothing"))
+    lines.append("Quote that exact path back to the user and tell them to add "
+                 "it in the Policy tab. You already have the path - do not ask "
+                 "them for it. Do NOT blame a path that is already granted: "
+                 "the error text from Windows usually names a parent directory "
+                 "rather than the path that was actually refused.")
+    return "\n".join(lines)
+
+
+def _fmt_result(run, tool_name, notes, diagnosis=""):
     """What the model sees after a tool call. Honest about refusals, because
     a model that thinks it got data will confabulate the rest of the turn."""
     outcome = run["outcome"]
@@ -49,10 +116,10 @@ def _fmt_result(run, tool_name, notes):
     if outcome == "blocked":
         return (
             "REFUSED BY POLICY. The sandbox started, the command ran, and the "
-            "security policy stopped it: %s. Detail: %s\n"
+            "security policy stopped it: %s. Detail: %s%s\n"
             "Tell the user this was blocked and which policy rule would need to "
             "change. Do not try the same path again."
-            % (run.get("reason"), _plain(run.get("detail"))[:400])
+            % (run.get("reason"), _plain(run.get("detail"))[:400], diagnosis)
         )
 
     if outcome == "refused-to-start":
@@ -66,7 +133,8 @@ def _fmt_result(run, tool_name, notes):
         )
 
     tail = _plain((run.get("stderr") or "") + (run.get("stdout") or "")).strip()
-    return "The command failed (exit %s). %s" % (run.get("exitCode"), tail[:1500])
+    return "The command failed (exit %s). %s%s" % (
+        run.get("exitCode"), tail[:1500], diagnosis)
 
 
 class Agent:
@@ -134,7 +202,12 @@ class Agent:
         app.record_run(run)
         emit({"type": "sandbox", "run": _public(run)})
 
-        text = _fmt_result(run, name, notes)
+        diagnosis = ""
+        if run["outcome"] in ("blocked", "failed"):
+            diagnosis = _grant_diagnosis(tool, arguments, pol, app.path_ctx())
+            if diagnosis:
+                run["missingGrants"] = diagnosis
+        text = _fmt_result(run, name, notes, diagnosis)
         emit({"type": "tool_result", "name": name, "outcome": run["outcome"],
               "text": text[:4000]})
         return text

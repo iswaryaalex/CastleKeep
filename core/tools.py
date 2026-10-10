@@ -90,7 +90,7 @@ def ps_write(path, content):
 
 class Tool(object):
     def __init__(self, name, description, parameters, build, shell="cmd",
-                 needs=None, danger=False, agent="computer-assist"):
+                 needs=None, danger=False, agent="computer-assist", paths=None):
         self.name = name
         self.description = description
         self.parameters = parameters
@@ -98,6 +98,15 @@ class Tool(object):
         self.shell = shell
         self.needs = needs or []
         self.danger = danger
+        # fn(args, ctx) -> {"read": [...], "write": [...]}: the paths this call
+        # is about to touch. Used ONLY to explain a refusal after MXC has
+        # already made it - never to pre-empt one. The difference matters:
+        # checking here would be checking in the layer the whole exercise
+        # argues you cannot trust, but staying silent afterwards leaves the
+        # model guessing which grant was missing, and it guesses badly.
+        # Windows is no help here - PowerShell reports a refused
+        # mailbox\labels as "Access to the path 'C:\Users' is denied".
+        self.paths = paths
         # Which subagent may ask for this. "*" means any - fetch_url is shared
         # because "can this thing reach the network" is a question worth
         # asking of every agent, not just the one that manages files.
@@ -364,30 +373,77 @@ def _slug(s):
     return out or "draft"
 
 
+# -- what each tool is about to touch ---------------------------------------
+#
+# Declared, not inferred. These feed the refusal explanation in agent.py and
+# nothing else - no tool consults them before running.
+
+def _p(read=(), write=()):
+    return {"read": [x for x in read if x], "write": [x for x in write if x]}
+
+
+def _pl_folder(a, ctx):
+    return _p(read=[_mail_dir(ctx, a.get("folder") or "inbox")])
+
+
+def _pl_calendar(a, ctx):
+    return _p(read=[_mail_dir(ctx, "calendar")])
+
+
+def _pl_drafts(a, ctx):
+    return _p(write=[_mail_dir(ctx, "drafts")])
+
+
+def _pl_archive(a, ctx):
+    # Both ends. The copy needs the destination; the tombstone that replaces
+    # the original needs the source.
+    return _p(write=[_mail_dir(ctx, "archive"),
+                     _mail_dir(ctx, a.get("folder") or "inbox")])
+
+
+def _pl_label(a, ctx):
+    # The labels root, not the leaf - filing under a new label creates a
+    # directory inside it, which is a write to the parent.
+    return _p(write=[_mail_dir(ctx, "labels"),
+                     _mail_dir(ctx, a.get("folder") or "inbox")])
+
+
+def _pl_read_arg(a, ctx):
+    return _p(read=[a.get("path")])
+
+
+def _pl_write_arg(a, ctx):
+    return _p(write=[a.get("path")])
+
+
+def _pl_move(a, ctx):
+    return _p(write=[a.get("source"), a.get("destination")])
+
+
 CATALOGUE = [
     Tool("list_files", "List the files and folders at a path on this machine.",
          {"properties": {"path": _str("Absolute Windows path to list.")},
           "required": ["path"]},
-         _b_list_files, shell="cmd", needs=["read access to that path"]),
+         _b_list_files, paths=_pl_read_arg, shell="cmd", needs=["read access to that path"]),
 
     Tool("read_file", "Read the contents of a text file.",
          {"properties": {"path": _str("Absolute Windows path of the file."),
                          "maxLines": {"type": "integer",
                                       "description": "How many lines to read. Default 200."}},
           "required": ["path"]},
-         _b_read_file, shell="powershell", needs=["read access to that file"]),
+         _b_read_file, paths=_pl_read_arg, shell="powershell", needs=["read access to that file"]),
 
     Tool("write_file", "Create or overwrite a text file.",
          {"properties": {"path": _str("Absolute Windows path to write."),
                          "content": _str("The full text to write.")},
           "required": ["path", "content"]},
-         _b_write_file, shell="powershell", needs=["write access to that path"]),
+         _b_write_file, paths=_pl_write_arg, shell="powershell", needs=["write access to that path"]),
 
     Tool("move_file", "Move or rename a file.",
          {"properties": {"source": _str("Absolute path of the file to move."),
                          "destination": _str("Absolute destination path.")},
           "required": ["source", "destination"]},
-         _b_move_file, shell="cmd",
+         _b_move_file, paths=_pl_move, shell="cmd",
          needs=["write access to both the source and the destination"]),
 
     Tool("device_info", "Get basic facts about this device: OS version, CPU, "
@@ -426,7 +482,7 @@ CATALOGUE = [
          {"properties": {"folder": _str("inbox, archive, drafts or private. "
                                         "Default inbox.")},
           "required": []},
-         _b_list_messages, shell="powershell", agent="triage",
+         _b_list_messages, paths=_pl_folder, shell="powershell", agent="triage",
          needs=["read access to that mailbox folder"]),
 
     Tool("read_message", "Read one message as JSON: sender, subject, date, "
@@ -435,7 +491,7 @@ CATALOGUE = [
                                     "list_messages, with or without .json."),
                          "folder": _str("Which folder it is in. Default inbox.")},
           "required": ["id"]},
-         _b_read_message, shell="powershell", agent="triage",
+         _b_read_message, paths=_pl_folder, shell="powershell", agent="triage",
          needs=["read access to that mailbox folder"]),
 
     Tool("search_mail", "Find messages containing a phrase. Returns the file "
@@ -443,14 +499,14 @@ CATALOGUE = [
          {"properties": {"query": _str("The phrase to look for. Case insensitive."),
                          "folder": _str("Which folder to search. Default inbox.")},
           "required": ["query"]},
-         _b_search_mail, shell="powershell", agent="triage",
+         _b_search_mail, paths=_pl_folder, shell="powershell", agent="triage",
          needs=["read access to that mailbox folder"]),
 
     Tool("archive_message", "Move a message out of the inbox into archive.",
          {"properties": {"id": _str("The message id to archive."),
                          "folder": _str("Where it is now. Default inbox.")},
           "required": ["id"]},
-         _b_archive_message, shell="powershell", agent="triage",
+         _b_archive_message, paths=_pl_archive, shell="powershell", agent="triage",
          needs=["write access to the source folder AND to the archive folder"]),
 
     Tool("label_message", "File a message under a label.",
@@ -458,7 +514,7 @@ CATALOGUE = [
                          "label": _str("The label to file it under."),
                          "folder": _str("Where it is now. Default inbox.")},
           "required": ["id", "label"]},
-         _b_label_message, shell="powershell", agent="triage",
+         _b_label_message, paths=_pl_label, shell="powershell", agent="triage",
          needs=["write access to the source folder AND to the labels folder"]),
 
     Tool("draft_reply", "Write a reply into the drafts folder. This never sends "
@@ -468,7 +524,7 @@ CATALOGUE = [
                          "subject": _str("Subject line."),
                          "body": _str("The full text of the reply.")},
           "required": ["subject", "body"]},
-         _b_draft_reply, shell="powershell", agent="triage",
+         _b_draft_reply, paths=_pl_drafts, shell="powershell", agent="triage",
          needs=["write access to the drafts folder"]),
 
     # -- triage: calendar ---------------------------------------------------
@@ -478,7 +534,7 @@ CATALOGUE = [
          {"properties": {"date": _str("A single day as YYYY-MM-DD. Omit for "
                                       "everything.")},
           "required": []},
-         _b_list_events, shell="powershell", agent="triage",
+         _b_list_events, paths=_pl_calendar, shell="powershell", agent="triage",
          needs=["read access to the calendar folder"]),
 
     Tool("find_free_slot", "Read the calendar so you can work out where the gaps "
@@ -486,7 +542,7 @@ CATALOGUE = [
          {"properties": {"date": _str("A single day as YYYY-MM-DD. Omit for "
                                       "everything.")},
           "required": []},
-         _b_find_free_slot, shell="powershell", agent="triage",
+         _b_find_free_slot, paths=_pl_calendar, shell="powershell", agent="triage",
          needs=["read access to the calendar folder"]),
 
     Tool("draft_invite", "Write a meeting invitation into drafts. This never "
@@ -497,7 +553,7 @@ CATALOGUE = [
                          "end": _str("End time as HH:MM."),
                          "attendees": _str("Comma-separated addresses.")},
           "required": ["title", "date", "start"]},
-         _b_draft_invite, shell="powershell", agent="triage",
+         _b_draft_invite, paths=_pl_drafts, shell="powershell", agent="triage",
          needs=["write access to the drafts folder"]),
 ]
 

@@ -135,7 +135,17 @@ _JSON_OBJ = re.compile(r"\{(?:[^{}]|\{[^{}]*\})*\}", re.S)
 # Things the *contained process* says when the policy did its job. These are
 # not MXC errors - they are the sandbox working.
 _DENIED_INSIDE = [
-    (re.compile(r"access is denied", re.I), "Windows refused the access"),
+    # Two shapes, and missing the second one is expensive. cmd.exe says
+    # "Access is denied." PowerShell says "Access to the path 'C:\\x' is
+    # denied." Matching only the first classified every PowerShell refusal as
+    # a plain command failure - so a real containment event was reported to
+    # the room as a broken tool, and the model was told "the command failed"
+    # instead of "REFUSED BY POLICY, do not retry". That is the one mistake
+    # this file cannot afford to make.
+    (re.compile(r"access (?:is denied|to the path\b[^\n]{0,200}?\bis denied)", re.I),
+     "Windows refused the access"),
+    (re.compile(r"UnauthorizedAccessException|\bPermissionDenied\b", re.I),
+     "Windows refused the access"),
     (re.compile(r"\bEPERM\b|\bEACCES\b", re.I), "permission denied"),
     (re.compile(r"file not found|cannot find the (file|path)", re.I),
      "path not visible from inside the sandbox"),
