@@ -15,9 +15,30 @@ same lint and compile path as anything typed by hand.
 
 import json
 import os
+import re
 import time
 
 from . import agents as agents_mod
+
+# The five faces. Kept here rather than in the UI because the profile is what
+# persists them and normalise() has to be able to reject one that no longer
+# exists - a profile naming a deleted species would draw an empty avatar on
+# every screen in the app.
+CRITTERS = ("fox", "cat", "owl", "bunny", "axolotl")
+
+THEMES = ("parchment", "moonlit", "sakura")
+
+# Validated here as well as in the browser. The onboarding form is the polite
+# place to catch a typo; this is the place that stops a hand-edited or
+# older-build profile putting something shaped like a path or a quote into a
+# seed file. Neither check is a security boundary - the connectors only ever
+# name local dummy data, nothing authenticates anywhere - but a username with
+# a backslash in it turns into a confusing refusal three layers away.
+_CONNECTOR_RULES = {
+    "gmail": re.compile(r"^[A-Za-z0-9._%+-]+@gmail\.com$", re.I),
+    "reddit": re.compile(r"^[A-Za-z0-9_-]{3,20}$"),
+    "github": re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"),
+}
 
 
 def path_for(project_dir):
@@ -48,10 +69,16 @@ def normalise(profile):
     longer exists."""
     p = dict(profile or {})
     known = agents_mod.ids()
+    personas = agents_mod.persona_ids()
 
-    subs = [s for s in (p.get("subagents") or []) if s in known]
+    subs = [s for s in (p.get("subagents") or []) if s in known
+            and s != agents_mod.BASE_ID]
     if not subs:
         subs = [agents_mod.DEFAULT_ID]
+    # The base agent is not a choice. Four personas writing invitations into
+    # folders that nothing ever reads is not a smaller version of this app, it
+    # is a broken one - so it goes first and it always goes.
+    subs = [agents_mod.BASE_ID] + subs
 
     presets = {}
     for s in subs:
@@ -60,14 +87,56 @@ def normalise(profile):
             chosen = agents_mod.default_preset(s)
         presets[s] = chosen
 
+    chat_agents = [s for s in subs if s != agents_mod.BASE_ID]
+    active = p.get("activeAgent")
+
     return {
         "userName": (p.get("userName") or "").strip(),
         "agentName": (p.get("agentName") or "").strip() or "Assistant",
         "subagents": subs,
         "presets": presets,
-        "activeAgent": p.get("activeAgent") if p.get("activeAgent") in subs else subs[0],
+        "critters": _critters(p, subs, personas),
+        "connectors": _connectors(p.get("connectors")),
+        "theme": p.get("theme") if p.get("theme") in THEMES else THEMES[0],
+        # The chat never opens on the base agent: it runs in the background
+        # and has a bubble of its own, and landing somebody in it would start
+        # them at the end of the story.
+        "activeAgent": active if active in chat_agents else chat_agents[0],
         "completedAt": p.get("completedAt") or time.time(),
     }
+
+
+def _critters(p, subs, personas):
+    """One face per agent, all five distinct.
+
+    Duplicates are resolved rather than rejected. A profile where two agents
+    share a face is not dangerous, it is just confusing on screen - and the
+    repair (hand the later one whichever species is still going spare) is
+    obvious enough that stopping to ask about it would be worse."""
+    want = p.get("critters") or {}
+    out, taken = {}, set()
+    order = [agents_mod.BASE_ID] + [s for s in subs if s != agents_mod.BASE_ID]
+    for agent_id in order + personas:
+        if agent_id in out:
+            continue
+        pick = want.get(agent_id)
+        if pick not in CRITTERS or pick in taken:
+            pick = next((c for c in CRITTERS if c not in taken), CRITTERS[0])
+        out[agent_id] = pick
+        taken.add(pick)
+    return out
+
+
+def _connectors(raw):
+    """The three dummy accounts. An entry that does not match its shape is
+    dropped, not corrected - an invented username seeded into somebody's
+    GitHub records would be a quiet lie about whose data they are looking at."""
+    raw = raw if isinstance(raw, dict) else {}
+    out = {}
+    for key, rule in _CONNECTOR_RULES.items():
+        value = str(raw.get(key) or "").strip()
+        out[key] = value if rule.match(value) else ""
+    return out
 
 
 def save(project_dir, profile):

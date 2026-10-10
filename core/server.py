@@ -72,11 +72,28 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, default=str), "application/json")
 
+    def _read_body(self):
+        """Drain the request body off the socket, always, before dispatching.
+
+        This is HTTP/1.1 with keep-alive, so the body is not optional reading:
+        bytes a handler does not consume stay in the buffer and become the
+        start of the NEXT request on that connection. The browser's postJSON
+        sends '{}' even when there is nothing to say, so every endpoint that
+        ignored its body - rescan, warmup, dryrun, profile/reset - was leaving
+        two bytes behind and the following request arrived with a method of
+        '{}GET'. It presented as a sporadic 501 that moved around depending on
+        which button you pressed, which is exactly the kind of bug that gets
+        blamed on the sandbox."""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        self._raw = self.rfile.read(n) if n > 0 else b""
+
     def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        if not n:
+        if not getattr(self, "_raw", b""):
             return {}
-        return json.loads(self.rfile.read(n).decode("utf-8"))
+        return json.loads(self._raw.decode("utf-8"))
 
     def _sse_open(self):
         self.send_response(200)
@@ -109,6 +126,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        # Before the origin check, not after: a refused request still has a
+        # body on the wire, and leaving it there corrupts the next one.
+        self._read_body()
         if not self._origin_ok():
             return self._json({"error": "cross-origin request refused"}, 403)
         try:
@@ -152,6 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                 "projectDir": app.project_dir,
                 "workspace": app.workspace,
                 "mailbox": app.mailbox,
+                "vault": app.vault,
                 "profile": app.profile,
                 "agents": agents_mod.describe(app.profile),
                 "activeAgent": agent_id,
@@ -183,6 +204,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/profile":
             return self._json({"profile": app.profile,
                                "agents": agents_mod.describe(app.profile)})
+        if path == "/api/basecamp":
+            # What the floating bubble draws: the merged global view, plus the
+            # state of the last sandboxed sync that produced it. The counter
+            # and the refusals come from a real run under policies\base.json;
+            # the lists themselves are a host-side read, same as /api/mailbox.
+            return self._json(app.basecamp.view())
         if path == "/api/mailbox":
             # Host-side read, not sandboxed - exactly like Lemonade. This
             # draws the pane so somebody can see what the agent is working on.
@@ -214,6 +241,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/profile/reset":
             profile_mod.clear(app.project_dir)
             app.profile = None
+            app.basecamp.stop()
+            return self._json({"ok": True})
+
+        if path == "/api/basecamp/sync":
+            # "Check now". Forces a pass even if nothing in the vault has
+            # changed, because the question being asked is usually "did my
+            # policy edit land", and the fingerprint knows nothing about
+            # policy files.
+            app.basecamp.sync_now()
+            return self._json({"ok": True, "sync": app.basecamp.state})
+
+        if path == "/api/basecamp/read":
+            app.basecamp.mark_read()
             return self._json({"ok": True})
 
         if path == "/api/policy":

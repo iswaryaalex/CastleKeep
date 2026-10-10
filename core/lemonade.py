@@ -52,6 +52,10 @@ class Lemonade:
         self.model = lc.get("model")
         self.temperature = lc.get("temperature", 0.3)
         self.max_tokens = lc.get("maxTokens", 1536)
+        # None = say nothing and take the server's default. False = ask for
+        # reasoning off, which is what config.json ships. See the note where
+        # this is used.
+        self.think = lc.get("thinking", False)
         self.timeout = lc.get("requestTimeoutSec", 300)
         self.tool_mode = lc.get("toolCallMode", "auto")   # auto | native | prompted
         self.prefix = None
@@ -246,6 +250,19 @@ class Lemonade:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        # Reasoning off unless config.json asks for it.
+        #
+        # Measured on Qwen3.5-2B: asked "when is my next appointment", the
+        # model called the right tools, read the right record, worked out the
+        # right answer - and wrote every word of it into the reasoning channel,
+        # emitting zero content tokens. The chat window showed a blank reply
+        # after three successful sandbox runs, which reads as "the sandbox ate
+        # my answer" and is the single most misleading thing this app could do.
+        #
+        # A server that does not understand the key ignores it, which is why
+        # the agent loop also has a fallback for exactly this case.
+        if self.think is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": bool(self.think)}
 
         url = self._url("/chat/completions")
         try:

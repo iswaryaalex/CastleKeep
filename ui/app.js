@@ -8,6 +8,8 @@
  */
 
 import { dragonSvg } from "/dragon.js";
+import { critterSvg } from "/critters.js";
+import { applyTheme, themePicker } from "/theme.js";
 
 const $  = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -42,11 +44,27 @@ const history = () => (S.histories[S.agent] = S.histories[S.agent] || []);
 /* dragon                                                                  */
 /* ====================================================================== */
 
+/* The face of whichever agent is selected. Each one wears a different animal,
+ * chosen during setup, so "which agent am I talking to" is answerable from the
+ * corner of your eye rather than by reading a title. The dragon stays on as
+ * the app's own mark in the title bar - it is CastleKeep, not an agent. */
+function critterOf(agentId) {
+  const agents = (S.state && S.state.agents) || [];
+  const rec = agents.find((a) => a.id === agentId);
+  return (rec && rec.critter) || "fox";
+}
+
+function faceOf(agentId, state) {
+  return critterSvg(critterOf(agentId), state || "idle");
+}
+
 function setDragon(state) {
-  const html = dragonSvg(state);
-  ["brandDragon", "chatDragon", "emptyDragon"].forEach((id) => {
+  const brand = $("brandDragon");
+  if (brand) brand.innerHTML = dragonSvg(state);
+  const mine = faceOf(S.agent, state);
+  ["chatDragon", "emptyDragon"].forEach((id) => {
     const n = $(id);
-    if (n) n.innerHTML = html;
+    if (n) n.innerHTML = mine;
   });
 }
 
@@ -139,7 +157,9 @@ async function hydrate() {
   S.state = st;
   S.agent = st.activeAgent || null;
   if (!S.dirty) S.policy = JSON.parse(JSON.stringify(st.policy));
+  applyTheme((st.profile || {}).theme);
   renderAgentNav();
+  renderPersonaStrip();
   renderChrome();
   renderMission();
   renderControl();
@@ -147,6 +167,7 @@ async function hydrate() {
   renderRunTab();
   renderSettings();
   if ((agentRec() || {}).sidePane === "mailbox") loadMailbox();
+  renderKeeper();
 }
 
 /* ------------------------------------------------------------- agents */
@@ -178,14 +199,57 @@ function renderAgentNav() {
   nav.parentElement.querySelectorAll(".rail-label")[1].classList
     .toggle("hidden", agents.length < 2);
   if (agents.length < 2) return;
-  for (const a of agents) {
+  // Personas first, base agent last under its own heading. The base agent is
+  // reachable here because its POLICY has to be editable - it is the one file
+  // in the app with reach across every other agent - but it is listed apart
+  // because it is not something you take turns talking to.
+  const order = agents.filter((a) => a.role !== "base")
+    .concat(agents.filter((a) => a.role === "base"));
+  let railed = false;
+  for (const a of order) {
+    if (a.role === "base" && !railed) {
+      railed = true;
+      nav.appendChild(el("div", "rail-label", "Always on"));
+    }
     const b = el("button", "nav agent" + (a.id === S.agent ? " on" : ""));
-    b.appendChild(el("i", null, ""));
-    b.lastChild.dataset.ic = a.id === "triage" ? "mail" : "panel";
-    b.appendChild(document.createTextNode(a.label));
+    b.appendChild(faceNode(a.id, a.id === S.agent ? "happy" : "idle"));
+    b.appendChild(document.createTextNode(
+      a.role === "base" ? baseName() : a.label));
     b.title = a.blurb;
     b.addEventListener("click", () => switchAgent(a.id));
     nav.appendChild(b);
+  }
+}
+
+function faceNode(agentId, state) {
+  const n = el("span", "face");
+  n.innerHTML = faceOf(agentId, state);
+  return n;
+}
+
+function baseName() {
+  return ((S.state || {}).profile || {}).agentName || "Assistant";
+}
+
+/* The strip above the transcript. Personas only: these are the four you take
+ * turns talking to, and each has its own folder, its own tools and its own
+ * policy file waiting behind it. */
+function renderPersonaStrip() {
+  const box = $("personaStrip");
+  if (!box) return;
+  const personas = (S.state.agents || [])
+    .filter((a) => a.enabled && a.role === "persona");
+  box.innerHTML = "";
+  box.classList.toggle("hidden", personas.length < 2);
+  for (const a of personas) {
+    const b = el("button", "persona" + (a.id === S.agent ? " on" : ""));
+    b.type = "button";
+    b.appendChild(faceNode(a.id, a.id === S.agent ? "happy" : "idle"));
+    b.appendChild(document.createTextNode(a.label));
+    b.title = a.blurb;
+    b.disabled = S.busy;
+    b.addEventListener("click", () => switchAgent(a.id));
+    box.appendChild(b);
   }
 }
 
@@ -256,23 +320,26 @@ function renderChrome() {
   $("hostChip").textContent = st.projectDir || "";
   $("hostChip").title = st.projectDir || "";
 
-  /* The agent's own name, everywhere it is spoken to. A participant named it
-   * in setup; showing them "Assistant" afterwards wastes the one moment the
-   * app felt like theirs. */
+  /* Who you are actually talking to. The name the participant typed belongs to
+   * the BASE agent and to nothing else - putting it in front of every persona
+   * ("Pip · Health", "Ask Pip something" while Health is selected) undoes the
+   * one thing the strip above the transcript is there to teach, which is that
+   * these are four separate agents with four separate policy files. The brand
+   * keeps the chosen name, because that is the app's own corner. */
   const prof = st.profile || {};
   const rec = agentRec();
   const name = prof.agentName || "Assistant";
+  const here = rec ? (rec.role === "base" ? name : rec.label) : name;
   document.querySelector(".brand-name").textContent = name;
   document.querySelector(".brand-sub").textContent =
     rec ? rec.label.toLowerCase() : "local assistant";
   document.title = name + " - CastleKeep";
 
-  $("chatTitle").textContent = rec && rec.id !== "computer-assist"
-    ? name + " · " + rec.label : name;
+  $("chatTitle").textContent = here;
   $("chatSub").textContent = rec
     ? rec.blurb + " Runs on this machine; nothing you type leaves it."
     : "Runs on this machine. Nothing you type leaves it.";
-  $("input").placeholder = "Ask " + name + " something…";
+  $("input").placeholder = "Ask " + here + " something…";
 
   /* The empty state belongs to renderEmptyState, which owns those nodes and
    * rebuilds them for whichever agent is selected. Writing to them from here
@@ -602,10 +669,11 @@ function renderEmptyState() {
   if (old) old.remove();
   const wrap = el("div", "empty");
   const av = el("span", "avatar lg");
-  av.innerHTML = dragonSvg("idle");
+  av.innerHTML = faceOf(S.agent, "idle");
   wrap.appendChild(av);
-  wrap.appendChild(el("h2", null, rec.id === "triage"
-    ? "What is in your inbox?" : "Ask about this device."));
+  wrap.appendChild(el("h2", null, rec.role === "base"
+    ? "What has arrived?"
+    : "Ask " + (rec.label || "your agent") + " something."));
   wrap.appendChild(el("p", null,
     "Every tool call runs in a throwaway container built from " +
     ((S.state || {}).policyFile || "policy.json") + " as it is at that instant."));
@@ -625,12 +693,16 @@ function msgNode(role) {
   if (role === "assistant") {
     const who = el("div", "who");
     const av = el("span", "avatar sm");
-    av.innerHTML = dragonSvg("idle");
+    av.innerHTML = faceOf(S.agent, "idle");
     who.appendChild(av);
     wrap.appendChild(who);
   }
   const body = el("div", "body");
-  if (role === "assistant") body.appendChild(el("div", "name", "Assistant"));
+  if (role === "assistant") {
+    const rec = agentRec() || {};
+    body.appendChild(el("div", "name",
+      rec.role === "base" ? baseName() : (rec.label || "Assistant")));
+  }
   wrap.appendChild(body);
   $("transcript").appendChild(wrap);
   return body;
@@ -1072,7 +1144,7 @@ function renderLint(lint) {
 }
 
 /* Every policy call carries the agent id. Without it "Save" on a page showing
- * policies\triage.json would write policy.json, which is the single most
+ * policies\health.json would write policy.json, which is the single most
  * expensive bug this feature could have: it would look like it worked. */
 const agentQ = () => (S.agent ? "?agent=" + encodeURIComponent(S.agent) : "");
 
@@ -1348,17 +1420,29 @@ function renderSettings() {
     ["Project", st.projectDir],
     ["Workspace", st.workspace],
     ["Mailbox", st.mailbox],
+    ["Vault", st.vault],
   ]);
 
   const prof = st.profile;
+  const conn = (prof && prof.connectors) || {};
   mini("profileCard", prof ? [
     ["You", prof.userName || "(not given)"],
-    ["Agent name", prof.agentName],
-    ["Subagents", (prof.subagents || []).join(", ")],
+    ["Base agent", prof.agentName + "  (" + critterOf("base") + ")"],
+    ["Agents", (prof.subagents || [])
+      .filter((id) => id !== "base")
+      .map((id) => (st.agents.find((a) => a.id === id) || {}).label +
+                   "  (" + critterOf(id) + ")").join("   ")],
+    ["Accounts", [conn.gmail, conn.reddit && "u/" + conn.reddit,
+                  conn.github && "github.com/" + conn.github]
+      .filter(Boolean).join("   ") || "(none)"],
     ["Policy files", (prof.subagents || [])
       .map((id) => (st.agents.find((a) => a.id === id) || {}).policyFile)
       .filter(Boolean).join("   ")],
   ] : [["Setup", "Not done yet - the launch screen will offer it."]]);
+
+  // Rebuilt on every hydrate, which is cheap and means the highlighted swatch
+  // can never disagree with the profile the server just handed back.
+  themePicker($("themeRow"), (prof || {}).theme || "parchment", saveTheme);
 
   const notes = $("notesCard");
   notes.innerHTML = "";
@@ -1403,6 +1487,314 @@ $("rescan").addEventListener("click", async () => {
   await hydrate();
   $("rescan").disabled = false;
   toast("Re-probed the host.");
+});
+
+/* ====================================================================== */
+/* theme                                                                   */
+/* ====================================================================== */
+
+/* applyTheme has already repainted by the time this runs - themePicker does
+ * that itself so the swatch feels instant. This only persists the choice, and
+ * a failure to persist is worth a toast but not worth undoing the repaint. */
+async function saveTheme(id) {
+  if (!S.state || !S.state.profile) return;
+  const { ok } = await postJSON("/api/profile",
+    Object.assign({}, S.state.profile, { theme: id }));
+  if (ok) S.state.profile.theme = id;
+  else toast("Could not save the theme to profile.json.", true);
+}
+
+/* ====================================================================== */
+/* the base agent's bubble                                                 */
+/* ====================================================================== */
+
+/* Everything below draws state the SERVER produced. The counter, the refusals
+ * and the "last checked" time all come from a real sandboxed sync_vaults run
+ * under policies\base.json; the lists are a host-side read of what that run
+ * was allowed to write. If the policy stops the merge, the lists stop growing
+ * and the note below says why, in Windows' own words. Nothing here invents a
+ * success. */
+
+const K = { open: false, tab: "calendar", data: null, poll: null };
+
+const KTAB_EMPTY = {
+  calendar: "Nothing on the calendar yet. Ask an agent to make an " +
+            "appointment and it will appear here.",
+  drafts:   "No drafts yet. Ask an agent to write a message and it will " +
+            "appear here.",
+  inbox:    "The mailbox is empty.",
+};
+
+function keeperEnabled() {
+  return !!(S.state && (S.state.agents || []).some((a) => a.role === "base"));
+}
+
+function renderKeeper() {
+  const wrap = $("keeper");
+  if (!wrap) return;
+  wrap.hidden = !keeperEnabled();
+  if (wrap.hidden) return;
+  $("keeperName").textContent = baseName();
+  $("keeperFace").innerHTML = faceOf("base", K.open ? "happy" : "idle");
+  if (!K.poll) {
+    loadKeeper();
+    K.poll = setInterval(loadKeeper, 6000);
+  }
+}
+
+async function loadKeeper() {
+  if (!keeperEnabled()) return;
+  try {
+    K.data = await getJSON("/api/basecamp");
+  } catch (e) {
+    return;   // the server is restarting; the next tick tries again
+  }
+  drawKeeper();
+}
+
+function drawKeeper() {
+  const d = K.data;
+  if (!d) return;
+  const sync = d.sync || {};
+  const btn = $("keeperBtn");
+  const badge = $("keeperBadge");
+
+  btn.className = "keeper-btn" +
+    (sync.state === "blocked" ? " blocked" :
+     sync.state === "partial" ? " partial" : "");
+  // innerHTML, so the badge has to be re-attached rather than written over.
+  btn.innerHTML = "";
+  btn.appendChild(badge);
+  btn.insertAdjacentHTML("beforeend",
+    faceOf("base", sync.state === "blocked" ? "alert" :
+                   sync.state === "partial" ? "thinking" :
+                   sync.unread ? "happy" : "idle"));
+
+  badge.hidden = !sync.unread;
+  badge.textContent = sync.unread > 99 ? "99+" : String(sync.unread || 0);
+  btn.title = keeperTitle(d);
+
+  $("keeperSub").textContent =
+    "always on · checks every " + Math.round(d.intervalSec || 20) + "s";
+  $("keeperFace").innerHTML = faceOf("base", K.open ? "happy" : "idle");
+  $("keeperWhen").textContent = sync.at
+    ? "checked " + ago(sync.at * 1000)
+    : (d.enabled ? "has not run yet" : "not running");
+
+  drawKeeperNote(d);
+  if (K.open) drawKeeperBody();
+}
+
+function keeperTitle(d) {
+  const sync = d.sync || {};
+  if (!d.enabled) return "Not running - finish setup first.";
+  if (sync.state === "blocked") return "Refused by its own policy. Open for why.";
+  if (sync.state === "partial") return "Some agents got through, some did not.";
+  return baseName() + " is watching every agent's outgoing folders.";
+}
+
+function drawKeeperNote(d) {
+  const n = $("keeperNote");
+  const sync = d.sync || {};
+  n.innerHTML = "";
+
+  if (!d.enabled) {
+    n.className = "keeper-note warn";
+    n.appendChild(el("b", null, "Not running."));
+    n.appendChild(el("span", null,
+      "There is no policy file for this agent yet, so there is nothing to " +
+      "run it under. Finish setup and it starts on its own."));
+    return;
+  }
+
+  if (sync.state === "blocked") {
+    n.className = "keeper-note bad";
+    n.appendChild(el("b", null, "Its last run was refused."));
+    n.appendChild(el("span", null, sync.reason ||
+      "The sandbox would not let it read what it needed."));
+    return;
+  }
+
+  if ((sync.refused || []).length) {
+    n.className = "keeper-note bad";
+    n.appendChild(el("b", null,
+      "Refused " + sync.refused.length + " of its folders."));
+    for (const r of sync.refused) {
+      const line = el("span", null, "");
+      // r.vault, not r.source: the folder is what has to go in the policy
+      // file, and for the computer assistant the two are different strings.
+      line.appendChild(el("code", null,
+        (r.vault === "mailbox" ? "mailbox\\" + r.stage
+                               : "vault\\" + r.vault + "\\" + r.stage) +
+        " — " + r.error));
+      line.appendChild(document.createElement("br"));
+      n.appendChild(line);
+    }
+    n.appendChild(el("span", null,
+      "Those agents cannot reach this view until " + baseName() +
+      " is granted read on those folders."));
+    return;
+  }
+
+  n.className = "keeper-note ok";
+  n.appendChild(el("span", null, d.pending
+    ? "Collecting from " + d.pending + " item" + (d.pending === 1 ? "" : "s") +
+      " across every agent's outgoing folders. It can see those folders and " +
+      "nothing else inside them."
+    : "Nothing waiting. The moment an agent writes an invitation or a draft, " +
+      "it shows up here."));
+}
+
+function drawKeeperBody() {
+  const body = $("keeperBody");
+  const d = K.data || {};
+  body.innerHTML = "";
+  const list = K.tab === "calendar" ? flattenCalendar(d.calendar || [])
+             : K.tab === "drafts"   ? (d.drafts || [])
+             : (d.inbox || []);
+
+  if (!list.length) {
+    body.appendChild(el("p", "muted", KTAB_EMPTY[K.tab]));
+    return;
+  }
+
+  let day = null;
+  for (const item of list) {
+    if (K.tab === "calendar" && item.day !== day) {
+      day = item.day;
+      body.appendChild(el("div", "kday", prettyDay(day)));
+    }
+    body.appendChild(kitem(item));
+  }
+}
+
+/* Days, each with its events, flattened into one list the panel can walk.
+ *
+ * Today forward, oldest first - a calendar that opens on last Tuesday makes
+ * the thing an agent just added the hardest row to find, and the thing an
+ * agent just added is the entire reason this panel exists. Yesterday is not
+ * hidden so much as not led with: if there is nothing upcoming at all, the
+ * whole calendar is shown rather than an empty pane that looks like a
+ * refusal.
+ *
+ * Sorted here rather than on the server because the server hands back the
+ * calendar exactly as it sits on disk, and "as it sits on disk" is the thing
+ * the merge is supposed to be judged on. */
+function flattenCalendar(days) {
+  const all = (days || []).slice().sort(byDate);
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = all.filter((d) => String(d.date) >= today);
+  const out = [];
+  for (const d of (upcoming.length ? upcoming : all)) {
+    for (const ev of (d.events || [])) {
+      out.push({
+        day: d.date,
+        title: ev.title || "(untitled)",
+        when: (ev.start || "") + (ev.end ? "–" + ev.end : ""),
+        detail: [ev.location, ev.notes].filter(Boolean).join(" · "),
+        source: ev.source || null,
+      });
+    }
+  }
+  return out;
+}
+
+const byDate = (a, b) => String(a.date).localeCompare(String(b.date));
+
+function kitem(item) {
+  // A mail item and a calendar item have different field names; normalise
+  // here so the row below only has to know about four things.
+  const title = item.title || item.subject || "(no subject)";
+  const when = item.when || (item.date || "").slice(11, 16) ||
+               (item.date || "").slice(5, 10);
+  const detail = item.detail || item.snippet || item.status || "";
+  const source = item.source || null;
+
+  const row = el("div", "kitem" + (source ? " fresh" : ""));
+  const top = el("div", "top");
+  top.appendChild(el("span", "t", title));
+  if (when) top.appendChild(el("span", "when", when));
+  row.appendChild(top);
+  if (detail) row.appendChild(el("div", "d", detail));
+  if (source) {
+    const tag = el("span", "ktag");
+    tag.appendChild(faceNode(source, "idle"));
+    tag.appendChild(document.createTextNode("from " + labelOf(source)));
+    row.appendChild(tag);
+  }
+  return row;
+}
+
+function labelOf(agentId) {
+  const rec = ((S.state || {}).agents || []).find((a) => a.id === agentId);
+  return rec ? rec.label.toLowerCase() : agentId;
+}
+
+function prettyDay(iso) {
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined,
+    { weekday: "long", day: "numeric", month: "long" });
+}
+
+function ago(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 10) return "just now";
+  if (s < 90) return s + "s ago";
+  if (s < 5400) return Math.round(s / 60) + "m ago";
+  return Math.round(s / 3600) + "h ago";
+}
+
+function toggleKeeper(open) {
+  K.open = open === undefined ? !K.open : open;
+  $("keeperPanel").hidden = !K.open;
+  if (K.open) {
+    drawKeeperBody();
+    // Clearing the badge is a claim that somebody has looked, so it is sent
+    // to the server rather than kept in the tab: the count is the base
+    // agent's, and a second window should not still be shouting about items
+    // this one has already shown.
+    postJSON("/api/basecamp/read", {}).then(() => {
+      if (K.data && K.data.sync) K.data.sync.unread = 0;
+      drawKeeper();
+    });
+  }
+  renderKeeper();
+}
+
+$("keeperBtn").addEventListener("click", () => toggleKeeper());
+$("keeperClose").addEventListener("click", () => toggleKeeper(false));
+
+document.querySelectorAll("[data-ktab]").forEach((b) =>
+  b.addEventListener("click", () => {
+    K.tab = b.dataset.ktab;
+    document.querySelectorAll("[data-ktab]").forEach((o) =>
+      o.classList.toggle("on", o === b));
+    drawKeeperBody();
+  }));
+
+$("keeperSync").addEventListener("click", async () => {
+  const b = $("keeperSync");
+  b.disabled = true;
+  b.textContent = "Checking…";
+  await postJSON("/api/basecamp/sync", {});
+  // One interval plus a little. The sync runs on the background thread's next
+  // tick, and reporting "done" before that tick has finished would be a
+  // result about the previous run.
+  setTimeout(async () => {
+    await loadKeeper();
+    await hydrate();
+    b.disabled = false;
+    b.textContent = "Check now";
+  }, 2200);
+});
+
+$("keeperPolicy").addEventListener("click", async () => {
+  toggleKeeper(false);
+  // switchAgent short-circuits to undefined when it is already selected or a
+  // turn is running, so this cannot be chained off its return value.
+  await switchAgent("base");
+  showTab("policy");
 });
 
 /* ====================================================================== */

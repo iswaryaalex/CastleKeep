@@ -22,6 +22,7 @@ import json
 import os
 import time
 
+from . import agents as agents_mod
 from . import policy as policy_mod
 from . import tools as tools_mod
 
@@ -79,6 +80,14 @@ def _pick_bait_dir(app):
         "there is nowhere to put a file the sandbox should not be able to "
         "read. Granted right now: %s. Narrow paths.read before trusting any "
         "claim of containment." % (", ".join(granted) or "nothing"))
+
+
+def _has_policy(app, agent_id):
+    """Whether this agent has a policy file of its own on disk yet.
+
+    Without one, reload_policy falls back to the root policy.json, and a tool
+    verified under somebody else's policy is a result about the wrong file."""
+    return os.path.isfile(app.policy_path_for(agent_id))
 
 
 def _step(sid, title, status, detail="", evidence=None, kind="live"):
@@ -361,10 +370,10 @@ def run_all(app, include_network=True):
         "list_processes": {"top": 3},
         "fetch_url": None,
         "run_command": None,
-        # The triage tools read and write the mailbox, which the root
-        # policy.json does not grant, so they run under the triage policy
-        # instead. Skipping them with "covered by the checks above" would be
-        # a lie: nothing above touches ${mailbox}.
+        # These touch ${mailbox} and ${vault}, which the root policy.json does
+        # not grant, so each runs under ITS OWN agent's policy file instead.
+        # Skipping them with "covered by the checks above" would be a lie:
+        # nothing above touches either path.
         "list_messages": {},
         "read_message": {"id": "2026-10-06-northwind-invoice"},
         "search_mail": {"query": "invoice"},
@@ -374,6 +383,13 @@ def run_all(app, include_network=True):
         "draft_invite": {"title": "verify", "date": "2026-10-09", "start": "09:00"},
         "archive_message": None,
         "label_message": None,
+        "sync_vaults": {},
+        "list_records": {},
+        "read_record": {"id": "appointments"},
+        "search_records": {"query": "Osei"},
+        "create_invite": {"title": "verify", "date": "2026-10-09",
+                          "start": "09:00", "end": "09:15"},
+        "draft_message": {"subject": "verify", "body": "verify\n"},
     }
 
     # Why a tool was skipped, where "covered above" would not be true.
@@ -384,31 +400,46 @@ def run_all(app, include_network=True):
             "one granted folder. Not a policy anybody chose.",
         "archive_message":
             "Needs a write grant on ${mailbox}\\archive, which the default "
-            "triage policy deliberately withholds. That refusal is the demo - "
-            "asserting 'ok' here would make this report contradict the "
+            "base agent policy deliberately withholds. That refusal is the "
+            "demo - asserting 'ok' here would make this report contradict the "
             "workshop. Grant it in the Policy tab and it succeeds.",
         "label_message":
             "Needs a write grant on ${mailbox}\\labels, which the default "
-            "triage policy deliberately withholds. Same reason as "
+            "base agent policy deliberately withholds. Same reason as "
             "archive_message.",
     }
-    has_triage = os.path.isfile(app.policy_path_for("triage"))
-    triage_pol = app.reload_policy("triage") if has_triage else None
+
+    # Which agent each tool belongs to, and that agent's own policy file.
+    # Driven off the registry rather than off a hardcoded id, so adding a
+    # persona does not quietly leave its tools untested. A tool shared by all
+    # four personas is exercised once, under the first persona that has been
+    # set up - running it four times would say the same thing four times.
+    def owner_of(tool):
+        for agent_id in agents_mod.ids():
+            if tool.for_agent(agent_id) and _has_policy(app, agent_id):
+                return agent_id
+        return None
+
     for t in tools_mod.CATALOGUE:
         args = sample.get(t.name)
         if args is None:
             yield emit(_step("tool:" + t.name, "Tool: %s" % t.name, "skip",
                              skip_why.get(t.name, "Covered by the checks above.")))
             continue
-        if t.agent == "triage" and not has_triage:
-            yield emit(_step("tool:" + t.name, "Tool: %s" % t.name, "skip",
-                             "No policies\\triage.json yet - run through setup "
-                             "in the app first, then re-run this."))
-            continue
-        pol = triage_pol if t.agent == "triage" else None
+        pol, agent_id = None, None
+        if t.agent != "*":
+            agent_id = owner_of(t)
+            if agent_id is None:
+                yield emit(_step(
+                    "tool:" + t.name, "Tool: %s" % t.name, "skip",
+                    "No policy file yet for the agent that owns %s (%s) - run "
+                    "through setup in the app first, then re-run this."
+                    % (t.name, t.agent_label())))
+                continue
+            pol = app.reload_policy(agent_id)
         run, ev = live("tool:" + t.name, "Tool: %s" % t.name,
-                       t.build(args, ctx), "ok", "Returned usable output.",
-                       pol=pol)
+                       t.build(args, app.tool_ctx(agent_id)), "ok",
+                       "Returned usable output.", pol=pol)
         if ev["status"] == "fail":
             ev["status"] = "warn"
             ev["detail"] += ("  This tool will report a refusal to the model "

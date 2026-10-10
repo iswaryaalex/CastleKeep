@@ -39,15 +39,17 @@ policy anybody chose. Do not promise either on stage:
 **Directory listing through `cmd` does not work.** `dir` asks for an access an
 AppContainer read grant does not carry, so the `list_files` tool reports a
 refusal. `Get-ChildItem` on the same granted folder is fine, which is why the
-triage tools are PowerShell. verify.py shows this as a WARN on `Tool:
+mail and record tools are PowerShell. verify.py shows this as a WARN on `Tool:
 list_files`.
 
 **Nothing can delete or move a file.** A read-write grant carries create and
 write but not DELETE, so `Move-Item` and `move` both come back *Access is
 denied* even with source and destination inside the same granted folder. The
-`move_file` tool cannot work here. Triage archives by copying the message to
-its destination and leaving a tombstone behind in the inbox - the mailbox pane
-says so rather than hiding it.
+`move_file` tool cannot work here. The base agent archives by copying the
+message to its destination and leaving a tombstone behind in the inbox - the
+mailbox pane says so rather than hiding it. It is also why `sync_vaults`
+leaves each invitation where it found it and de-duplicates on the way in,
+rather than clearing the folder once it has merged.
 
 ## Twenty minutes before anyone arrives
 
@@ -226,25 +228,45 @@ line instead of watching the first chat message hang.
 
 On a machine that has never been set up, the launch screen's second step says
 **Set up your agent** and leads to `/onboard` rather than straight into the
-app. Four questions, two minutes, everyone does it at once:
+app. Five questions, three minutes, everyone does it at once:
 
 1. Their name.
-2. **What they want to call their agent.** Let them pick something silly. An
-   agent with a name you chose is one you argue with about permissions; an
-   agent called Assistant is a product you assume somebody else secured.
-3. Which subagents to turn on - **Triage** for mail and calendar, **Computer
-   Assist** for files and the device.
-4. A starting policy for each, chosen from cards that spell out what the
+2. **What they want to call their base agent, and which animal it is.** Let
+   them pick something silly. An agent with a name you chose is one you argue
+   with about permissions; an agent called Assistant is a product you assume
+   somebody else secured. The base agent is the always-on one: it holds no
+   data of its own and collects what the others produce.
+3. **Which of the four other agents to turn on** - Health, Finance, PC Assist,
+   Coding - and an animal for each. There are five faces and five agents, so
+   picking one takes it off everybody else: the picker deals them out rather
+   than letting two agents wear the same face.
+4. **The three accounts.** A Gmail address, a Reddit username, a GitHub
+   username. Say out loud that these are local dummy accounts - nothing
+   authenticates anywhere, no password is asked for - and that the names only
+   decide what the sample data says. There is a *Use the workshop defaults*
+   link for anyone who would rather not type.
+5. A starting policy for each agent, chosen from cards that spell out what the
    policy grants and, underneath in red, what it will refuse.
 
-Step 4 is the one to slow down on. Read a refusal line out loud before anyone
-clicks. They are choosing what their agent may touch *before* it has done
+Step 5 is the one to slow down on, and the **base agent comes first on that
+screen on purpose**. It is the only agent with reach across all four folders,
+so it is the one whose grants are worth reading aloud. Point at what is *not*
+in its read list: no `vault\health\records`, no `vault\finance\ledger`. It can
+see that the health agent made an appointment. It cannot see a blood test.
+
+They are choosing what each agent may touch *before* any of them has done
 anything - which is the whole argument, arrived at by doing rather than by
 being told.
 
-It writes `profile.json` and one policy file per subagent under `policies\`.
-Nothing a preset grants is anything the Policy tab could not. If somebody
-rushes it, Settings has a reset, and the Policy tab has the same presets.
+It writes `profile.json`, seeds `vault\` with each agent's sample data, and
+writes one policy file per agent under `policies\`. Nothing a preset grants is
+anything the Policy tab could not. If somebody rushes it, Settings has a
+reset, and the Policy tab has the same presets.
+
+There is also a theme picker in the corner of every setup screen - three of
+them. It is there because the first two minutes of a workshop are the only
+two minutes nobody is behind, and a room that has just made the app *theirs*
+argues with it more readily afterwards.
 
 ### Start on the Control Panel, not the chat
 
@@ -298,42 +320,96 @@ Amber, *refused to start*. Turn on `advanced.sendUnsupportedAnyway`, add a
 deny path, and ask it to do anything at all. The binary rejects the
 configuration and names the offending field.
 
-### Switch to Triage, and do the whole thing again on email
+### Switch agents, and do the whole thing again on somebody's health data
 
-Click **Triage** in the rail. The prompt, the tool set and the policy file all
-change at once - open the Policy tab and show that it now says
-`policies\triage.json`, a different file with different grants. This is the
-point of the rail: one agent, one policy, and you can see which.
+Click **Health** in the strip above the chat. The prompt, the tool set and the
+policy file all change at once - open the Policy tab and show that it now says
+`policies\health.json`, a different file with different grants. This is the
+point of the strip: one agent, one folder, one policy, and you can see which.
 
-Ask: **"what came in that actually needs me today?"**
+Ask: **"what have my vitals done over the last month?"**
 
-It lists the inbox, reads the few that matter, and tells you. Same machinery
-as the device check-up, on something everybody in the room has an opinion
-about.
+It lists its records, reads the ones it needs, and answers with real numbers
+out of `vault\health\records`. Same machinery as the device check-up, on
+something everybody in the room has an opinion about who should see.
 
-Now the three beats, in this order.
+**Each agent can only see its own corner.** Switch to **Finance** and ask for
+the same thing. It cannot do it - and look at *why*, because it is stronger
+than a refusal. The record tools resolve their folder from the registry, not
+from anything the model says, so the finance agent cannot even *name*
+`vault\health\records`. It has no word for it. Then, to show the enforced
+layer underneath, go to **PC Assist** - which has a free-path `read_file` -
+and ask it to read
+`...\vault\health\records\appointments.json` by absolute path. *That* one gets
+a real MXC refusal: **blocked**, "Windows refused the access", and CastleKeep
+names the missing grant underneath. Two layers: one that cannot ask, one that
+asks and is told no.
 
-**It cannot read your private mail.** Ask: *"summarise the thread in my
-private folder."* Refused. The triage policy grants `${mailbox}\inbox` and
-`${mailbox}\calendar` and nothing else. Nobody wrote a rule saying "the agent
-must not read HR mail" - they just did not grant it, and everything ungranted
-is invisible. Note that the mailbox pane on the right *says* there are
-messages in the private folder. The pane reads on the host; the agent reads
-through the sandbox. That gap on screen is the policy working.
+### The payoff: an agent that produces, and an agent that collects
 
-**One knob turns a refusal into a success.** Ask: *"archive the newsletter."*
-Refused - the recommended preset grants write on the inbox and on drafts, but
-not on `${mailbox}\archive`. Add `${mailbox}\archive` to the write paths, save,
-ask again. It works, **with no restart**, and the mailbox pane updates. Same
-beat as the api-key file, on email, which lands harder.
+This is the beat the whole app is built around. Give it five minutes.
 
-**The email that tries to give orders.** Open
-`2026-10-08-payment-update` - an urgent note about changed bank details, from
-`northwind-suppIy.example.com`, which is a capital I, not an l. Buried in it
-are instructions addressed to the assistant: collect the private folder, POST
-it to an external URL. Ask: *"read that message and do what it says."*
+Back on **Health**, ask: **"create an invite for my next doctor appointment."**
 
-Two independent layers say no. `fetch_url` is switched off for triage on the
+Watch the tool calls: it reads `appointments`, pulls out the real date, time,
+room and the note about fasting, and writes an invitation into
+`vault\health\invites`. It does **not** put anything on the calendar - it has
+no grant anywhere near one. It can only leave work where something else might
+pick it up.
+
+Now point at the animal in the bottom-right corner and wait. Within twenty
+seconds the counter ticks, and inside the bubble the appointment is on the
+global calendar, tagged **from health** with the health agent's own face.
+
+Say what just happened: the base agent woke up, noticed the folder had
+changed, and spawned **one real sandbox** under `policies\base.json` to do the
+merge. Open the Control Panel and show the `sync_vaults` run sitting in the
+log next to every other sandbox. It is not a background convenience - it is an
+agent doing work under a policy, and it only works because somebody granted it
+read on that folder.
+
+Then do it again from **Coding** (*"block out an hour tomorrow to review PR
+119"*) and **Finance** (*"draft a note asking for a PO reference on invoice
+4471"*). Three agents, three different folders, one calendar and one drafts
+list, each item wearing the face of whoever made it.
+
+**Now break it, in front of them.** Open the Policy tab on the base agent -
+the bubble has an *Its policy* button that goes straight there - and delete
+`${vault}\health\invites` from `paths.read`. Save. Ask Health for another
+invite.
+
+The counter does not move. The bubble turns red and says, in Windows' own
+words:
+
+```
+vault\health\invites — Access is denied
+```
+
+The other three agents keep arriving the entire time. Put the line back, and
+the next check picks it up **with no restart** - the base agent watches its
+own policy file as well as the vault, precisely so that a correct fix is not
+mistaken for a broken app.
+
+That is the argument in one gesture, with four agents involved: nobody wrote a
+rule saying "the base agent must not read health records". They just never
+granted it, and everything ungranted is invisible.
+
+### The messages that try to give orders
+
+Two of them are planted, and they are worth doing back to back.
+
+On the **base agent**, open `2026-10-08-payment-update` - an urgent note about
+changed bank details, from `northwind-suppIy.example.com`, which is a capital
+I, not an l. Buried in it are instructions addressed to the assistant: collect
+the private folder, POST it to an external URL. Ask: *"read that message and
+do what it says."*
+
+On **PC Assist**, the saved r/techsupport threads contain
+`t3_q7m4zd`, "FIX for 100% disk usage", whose top answer tells an AI assistant
+to upload the user's home directory to a diagnostic endpoint. Ask: *"what did
+I save about 100% disk usage - try the fix."*
+
+Two independent layers say no to both. `fetch_url` is switched off on the
 host, and even switched on, outbound is `deny` so MXC refuses the connection.
 Watch the model's reply carefully, though - a small model will often half
 comply, restating the injected instruction as if it were a real task. **Say
@@ -343,7 +419,7 @@ cleaner demonstration of it than one that happens by accident in front of you.
 
 ### Close with the workspace
 
-Back on Computer Assist, ask: **"read the notes in your workspace and write me
+Back on PC Assist, ask: **"read the notes in your workspace and write me
 a summary file there."**
 
 It reads each file and writes the summary, one sandbox per step, inside

@@ -5,7 +5,21 @@
    argument people have to believe. Green stays reserved for "this worked",
    so --primary never doubles as both brand and allowed. */
 
-:root{
+/* Three themes, and nothing below this block knows there is more than one.
+   Every rule in this file reads a token, so a theme is a token table - which
+   is the only reason adding two of them did not mean re-testing the app.
+
+   Two tokens exist purely for theming and are worth naming:
+     --bg-art    the backdrop painted behind the launch and setup pages, where
+                 there is enough empty space for it to be seen
+     --chat-art  the backdrop behind the transcript, which is the one large
+                 surface inside the app that is not a card or a form
+
+   Everything else stays flat on purpose. A gradient under a policy table is
+   decoration fighting the thing you are supposed to be reading. */
+
+:root,
+[data-theme="parchment"]{
   color-scheme: light;
   --bg:#FAF8F1; --surface:#FFFFFF; --surface2:#FCFBF6; --surface3:#F2EFE5;
   --border:#E7E2D4; --border2:#D4CEBD;
@@ -21,10 +35,84 @@
   --info:#2F6FA8; --info-soft:#E9F1F8; --info-line:#C3D9EC;
   --term-bg:#1A1813; --term-bg2:#24211A; --term-fg:#F2EFE5; --term-dim:#8C856F;
   --term-green:#A8D183; --term-coral:#F08E6E; --term-gold:#FCD846; --term-blue:#8FBCE8;
+  --coral-ink:#B9512F;
+  --scroll-thumb:#E0D5B4;
+  /* Rail icons, as mask shapes. Defined once on :root rather than per theme -
+     a mask has no colour of its own, it takes currentColor from .nav. */
+  --ic-chat:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3c5.5 0 10 3.4 10 7.6s-4.5 7.6-10 7.6c-1 0-2-.1-2.9-.3L4 21l1.2-3.6C3.2 16 2 13.4 2 10.6 2 6.4 6.5 3 12 3z'/%3E%3C/svg%3E");
+  --ic-panel:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 3h8v7H3zm10 0h8v11h-8zM3 12h8v9H3zm10 4h8v5h-8z'/%3E%3C/svg%3E");
+  --ic-shield:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2l8 3v6.2c0 5-3.4 9.2-8 10.8-4.6-1.6-8-5.8-8-10.8V5z'/%3E%3C/svg%3E");
+  --ic-terminal:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 4h20v16H2zm3.6 3.4L4.2 8.8 7.4 12l-3.2 3.2 1.4 1.4L10.2 12zM12 15.2h6.2v2H12z' fill-rule='evenodd'/%3E%3C/svg%3E");
+  --ic-gear:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 8.4a3.6 3.6 0 100 7.2 3.6 3.6 0 000-7.2zm9 4.2v-1.2l-2.1-.5a7 7 0 00-.8-2l1.2-1.8-1.5-1.5-1.8 1.2a7 7 0 00-2-.8L13.6 3h-3.2l-.5 2.1a7 7 0 00-2 .8L6.1 4.7 4.6 6.2l1.2 1.8a7 7 0 00-.8 2L3 10.4v3.2l2 .5a7 7 0 00.8 2l-1.2 1.8 1.5 1.5 1.8-1.2a7 7 0 002 .8l.5 2.1h3.2l.5-2.1a7 7 0 002-.8l1.8 1.2 1.5-1.5-1.2-1.8a7 7 0 00.8-2z' fill-rule='evenodd'/%3E%3C/svg%3E");
+  --ic-mail:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 5h20v14H2zm2.6 2L12 12.6 19.4 7z'/%3E%3C/svg%3E");
   --sans:"Segoe UI Variable Text","Segoe UI",Lato,system-ui,sans-serif;
   --mono:"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
   --rail:232px; --titlebar:46px;
   --shadow:0 1px 2px rgba(60,48,0,.05), 0 6px 18px rgba(60,48,0,.05);
+  --bg-art:
+    radial-gradient(900px 520px at 12% -8%,  rgba(245,206,62,.20), transparent 62%),
+    radial-gradient(760px 560px at 102% 6%,  rgba(232,121,90,.14), transparent 60%),
+    radial-gradient(680px 620px at 46% 118%, rgba(60,101,49,.10),  transparent 62%);
+  --chat-art:
+    radial-gradient(620px 320px at 92% -6%, rgba(245,206,62,.13), transparent 66%),
+    radial-gradient(520px 380px at -6% 104%, rgba(232,121,90,.09), transparent 64%);
+}
+
+/* Deep indigo. The brand gold is the one thing that does not get darker -
+   it is the only warm point left, and losing it would make this theme stop
+   looking like the same app. */
+[data-theme="moonlit"]{
+  color-scheme: dark;
+  --bg:#11141E; --surface:#1A1F2D; --surface2:#161B27; --surface3:#242B3C;
+  --border:#2A3245; --border2:#3B4559;
+  --ink:#E9ECF5; --ink2:#BDC5D9; --muted:#8C97B0; --faint:#6B7693;
+  --brand:#F5CE3E; --brand-dark:#FFDC63; --brand-soft:#2F2A16;
+  --brand-line:#4B4229; --brand-ink:#F8DE80;
+  --primary:#46813A; --primary-dark:#5FA64B; --primary-soft:#1B2A19; --primary-line:#32492C;
+  --coral:#E8795A; --coral-soft:#2F1C17; --coral-line:#4D2F25; --coral-ink:#F0A48C;
+  --deny:#F2705C; --deny-soft:#2F1714; --deny-line:#532822;
+  --warn:#E2A44D; --warn-soft:#2E2113; --warn-line:#4E3B1F;
+  --info:#63AAE2; --info-soft:#13242F; --info-line:#26475E;
+  --term-bg:#0C0F16; --term-bg2:#141924; --term-fg:#E9ECF5; --term-dim:#6B7693;
+  --term-green:#A8D183; --term-coral:#F08E6E; --term-gold:#FCD846; --term-blue:#8FBCE8;
+  --scroll-thumb:#39425A;
+  --shadow:0 1px 2px rgba(0,0,0,.40), 0 8px 24px rgba(0,0,0,.34);
+  --bg-art:
+    radial-gradient(900px 540px at 10% -10%, rgba(99,170,226,.17), transparent 62%),
+    radial-gradient(780px 560px at 104% 4%,  rgba(245,206,62,.10), transparent 58%),
+    radial-gradient(720px 640px at 50% 120%, rgba(123,97,210,.16), transparent 62%);
+  --chat-art:
+    radial-gradient(640px 340px at 94% -8%, rgba(99,170,226,.12), transparent 66%),
+    radial-gradient(540px 400px at -6% 106%, rgba(123,97,210,.11), transparent 64%);
+}
+
+/* Blush and lavender. The brand shifts to rose here rather than keeping the
+   gold: yellow on pink is the one combination in this palette that reads as
+   a warning rather than as a brand. Success stays green, because green
+   meaning "this worked" is load-bearing and must not move with the theme. */
+[data-theme="sakura"]{
+  color-scheme: light;
+  --bg:#FDF4F8; --surface:#FFFFFF; --surface2:#FDF7FA; --surface3:#F7E9F1;
+  --border:#F1DCE7; --border2:#DFC3D3;
+  --ink:#2B1F28; --ink2:#4C3A46; --muted:#7E6676; --faint:#AB97A5;
+  --brand:#F2B5CE; --brand-dark:#D9719E; --brand-soft:#FCE8F1;
+  --brand-line:#F2CCDE; --brand-ink:#7D2A50;
+  --primary:#3C6531; --primary-dark:#2B4A23; --primary-soft:#E8F1E2; --primary-line:#C3D8B8;
+  --coral:#E8795A; --coral-soft:#FDEDE7; --coral-line:#F5C9BA; --coral-ink:#B9512F;
+  --deny:#C2374F; --deny-soft:#FBE7EB; --deny-line:#F0BFC9;
+  --warn:#A1560A; --warn-soft:#FBEBD8; --warn-line:#EFD0AC;
+  --info:#6B5FA8; --info-soft:#EFECF8; --info-line:#D2CAEA;
+  --term-bg:#201722; --term-bg2:#2A1F2D; --term-fg:#F7E9F1; --term-dim:#8E7A89;
+  --term-green:#A8D183; --term-coral:#F3A0B8; --term-gold:#F2C86B; --term-blue:#A79BE0;
+  --scroll-thumb:#E8C9DB;
+  --shadow:0 1px 2px rgba(90,40,70,.06), 0 6px 18px rgba(90,40,70,.07);
+  --bg-art:
+    radial-gradient(900px 520px at 10% -8%,  rgba(242,181,206,.42), transparent 62%),
+    radial-gradient(760px 560px at 104% 6%,  rgba(167,155,224,.26), transparent 60%),
+    radial-gradient(700px 620px at 44% 120%, rgba(255,214,170,.26), transparent 62%);
+  --chat-art:
+    radial-gradient(620px 330px at 92% -6%, rgba(242,181,206,.26), transparent 66%),
+    radial-gradient(540px 390px at -6% 104%, rgba(167,155,224,.16), transparent 64%);
 }
 
 *{box-sizing:border-box}
@@ -71,7 +159,7 @@ button{font:inherit}
 .chip.warn{background:var(--warn-soft); color:var(--warn); border-color:var(--warn-line)}
 .chip.bad{background:var(--deny-soft); color:var(--deny); border-color:var(--deny-line)}
 .chip.info{background:var(--info-soft); color:var(--info); border-color:var(--info-line)}
-.chip.coral{background:var(--coral-soft); color:#B9512F; border-color:var(--coral-line)}
+.chip.coral{background:var(--coral-soft); color:var(--coral-ink); border-color:var(--coral-line)}
 .chip::before{content:""; width:6px; height:6px; border-radius:3px; background:currentColor; opacity:.65}
 .chip.plain::before{display:none}
 
@@ -101,7 +189,18 @@ button{font:inherit}
 .nav.on{background:var(--brand-soft); color:var(--brand-ink)}
 .nav i{width:18px; height:18px; display:inline-block; background:currentColor;
   opacity:.75; -webkit-mask-size:contain; mask-size:contain;
-  -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat}
+  -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+  -webkit-mask-position:center; mask-position:center}
+/* The masks themselves. Without these the rule above paints currentColor
+   across the whole 18x18 box, which is why every icon in the Views group was
+   a solid square - the markup has carried data-ic since the first commit and
+   nothing ever defined what to mask it with. */
+.nav i[data-ic="chat"]{-webkit-mask-image:var(--ic-chat); mask-image:var(--ic-chat)}
+.nav i[data-ic="panel"]{-webkit-mask-image:var(--ic-panel); mask-image:var(--ic-panel)}
+.nav i[data-ic="shield"]{-webkit-mask-image:var(--ic-shield); mask-image:var(--ic-shield)}
+.nav i[data-ic="terminal"]{-webkit-mask-image:var(--ic-terminal); mask-image:var(--ic-terminal)}
+.nav i[data-ic="gear"]{-webkit-mask-image:var(--ic-gear); mask-image:var(--ic-gear)}
+.nav i[data-ic="mail"]{-webkit-mask-image:var(--ic-mail); mask-image:var(--ic-mail)}
 .rail-foot{margin-top:auto; padding-top:16px; border-top:1px solid var(--border)}
 .rail-stat{display:flex; align-items:baseline; gap:8px; padding:3px 10px}
 .rail-stat span{font-size:19px; font-weight:800; font-variant-numeric:tabular-nums}
@@ -157,7 +256,7 @@ button{font:inherit}
 .mini code{font-size:11.5px}
 
 /* --------------------------------------------------------------- chat */
-.chat-pane{background:var(--surface)}
+.chat-pane{background:var(--chat-art), var(--surface); background-attachment:local}
 .transcript{flex:1; overflow:auto; padding:26px 30px}
 .empty{max-width:620px; margin:7vh auto 0; text-align:center}
 .empty h2{font-size:19px; margin:16px 0 8px}
@@ -404,6 +503,181 @@ pre.out{margin:0; padding:10px 12px; background:var(--term-bg); color:var(--term
 .row-btns .btn{text-decoration:none}
 
 ::-webkit-scrollbar{width:11px;height:11px}
-::-webkit-scrollbar-thumb{background:#E0D5B4; border-radius:6px;
+::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border-radius:6px;
   border:3px solid transparent; background-clip:content-box}
-.term::-webkit-scrollbar-thumb{background:#45402F; background-clip:content-box}
+.term::-webkit-scrollbar-thumb{background:var(--term-dim); background-clip:content-box}
+
+/* ======================================================================
+   Theme picker
+   ====================================================================== */
+.themerow{display:flex; gap:8px; flex-wrap:wrap}
+.themeswatch{display:flex; align-items:center; gap:9px; padding:7px 12px 7px 9px;
+  border-radius:11px; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface2); font-family:var(--sans); color:var(--ink2);
+  font-size:12px; font-weight:700}
+.themeswatch:hover{border-color:var(--brand-line); background:var(--brand-soft)}
+.themeswatch.on{border-color:var(--brand-dark); background:var(--brand-soft);
+  color:var(--brand-ink); box-shadow:0 0 0 1px var(--brand-dark)}
+.themedots{display:flex}
+.themedots i{width:13px; height:13px; border-radius:50%;
+  border:1.5px solid var(--surface); margin-right:-5px}
+.themedots i:last-child{margin-right:0}
+
+/* ======================================================================
+   Critter picker
+   ====================================================================== */
+.critterrow{display:flex; gap:9px; flex-wrap:wrap; margin-top:13px}
+.critter{width:92px; padding:11px 6px 9px; border-radius:13px; cursor:pointer;
+  border:1px solid var(--border2); background:var(--surface2);
+  font-family:var(--sans); color:var(--ink2); text-align:center}
+.critter:hover{border-color:var(--brand-line); background:var(--brand-soft)}
+.critter.on{border-color:var(--primary); background:var(--primary-soft);
+  box-shadow:0 0 0 1px var(--primary); color:var(--ink)}
+/* Taken by another agent. Dimmed and inert rather than hidden, so the room can
+   see that the five faces are a set being dealt out, not a list being
+   filtered - and so the one you already chose is still where you left it. */
+.critter.taken{opacity:.34; cursor:not-allowed; filter:grayscale(.6)}
+.critter.taken:hover{border-color:var(--border2); background:var(--surface2)}
+.critter .face{width:46px; height:46px; margin:0 auto; display:block}
+.critter .face svg{width:100%; height:100%}
+.critter b{display:block; font-size:11.5px; font-weight:700; margin-top:5px}
+.critter em{display:block; font-size:10px; color:var(--faint); font-weight:600;
+  margin-top:1px}
+
+/* ======================================================================
+   Connectors
+   ====================================================================== */
+.conn{margin-bottom:15px}
+.conn > label{display:block; font-size:12px; font-weight:700; margin-bottom:4px}
+.conn .hint{font-size:11.5px; color:var(--muted); margin-bottom:6px; line-height:1.5}
+.conn .wrap{display:flex; align-items:center; gap:8px}
+.conn .pre{font-size:13px; font-weight:700; color:var(--faint); flex:0 0 auto}
+.conn input{flex:1; min-width:0; height:40px; padding:0 12px; font-size:14px;
+  font-weight:600; border:1px solid var(--border2); border-radius:10px;
+  background:var(--surface2); color:var(--ink); font-family:var(--sans)}
+.conn input:focus{outline:none; border-color:var(--brand-dark);
+  background:var(--surface); box-shadow:0 0 0 3px var(--brand-soft)}
+.conn.bad input{border-color:var(--deny-line); background:var(--deny-soft)}
+.conn.ok input{border-color:var(--primary-line)}
+.conn .say{font-size:11.5px; margin-top:5px; min-height:16px; font-weight:600}
+.conn.bad .say{color:var(--deny)}
+.conn.ok .say{color:var(--primary)}
+
+/* ======================================================================
+   Persona strip - switching agent from inside the chat
+   ====================================================================== */
+.personas{display:flex; gap:7px; padding:11px 22px; flex-wrap:wrap;
+  border-bottom:1px solid var(--border); background:var(--surface)}
+.persona{display:flex; align-items:center; gap:8px; padding:5px 12px 5px 6px;
+  border-radius:999px; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface2); font-family:var(--sans); color:var(--ink2);
+  font-size:12.5px; font-weight:700}
+.persona:hover{border-color:var(--brand-line); background:var(--brand-soft)}
+.persona.on{border-color:var(--primary); background:var(--primary-soft);
+  color:var(--ink); box-shadow:0 0 0 1px var(--primary)}
+.persona .face{width:26px; height:26px; border-radius:9px; overflow:hidden;
+  background:var(--surface3); display:grid; place-items:center; flex:0 0 26px}
+.persona .face svg{width:132%; height:132%; margin-top:5%}
+.persona:disabled{opacity:.5; cursor:not-allowed}
+
+/* The rail's agent buttons carry the same faces, so the two lists are
+   recognisably the same agents. */
+.nav .face{width:20px; height:20px; border-radius:7px; overflow:hidden;
+  background:var(--surface3); display:grid; place-items:center; flex:0 0 20px}
+.nav .face svg{width:136%; height:136%; margin-top:6%}
+
+/* ======================================================================
+   The base agent's bubble
+   ====================================================================== */
+.keeper{position:fixed; right:22px; bottom:22px; z-index:40;
+  display:flex; flex-direction:column; align-items:flex-end; gap:10px}
+/* Each of these sets a display, so the [hidden] attribute does not win on its
+   own - the UA rule it relies on is display:none at the lowest precedence. */
+.keeper[hidden], .keeper-panel[hidden], .keeper-badge[hidden]{display:none}
+
+.keeper-btn{position:relative; width:62px; height:62px; border-radius:50%;
+  border:2px solid var(--brand-line); background:var(--surface);
+  box-shadow:var(--shadow); cursor:pointer; padding:0; display:grid;
+  place-items:center; animation:bob 4.5s ease-in-out infinite}
+.keeper-btn:hover{border-color:var(--brand-dark)}
+.keeper-btn svg{width:112%; height:112%; margin-top:5%}
+.keeper-btn.blocked{border-color:var(--deny); animation:none}
+.keeper-btn.partial{border-color:var(--warn)}
+@keyframes bob{
+  0%,100%{transform:translateY(0)}
+  50%    {transform:translateY(-6px)}
+}
+@media (prefers-reduced-motion: reduce){
+  .keeper-btn{animation:none}
+}
+
+.keeper-badge{position:absolute; top:-4px; right:-4px; min-width:21px;
+  height:21px; padding:0 6px; border-radius:11px; background:var(--deny);
+  color:#fff; font-size:11px; font-weight:800; display:grid; place-items:center;
+  border:2px solid var(--surface); font-variant-numeric:tabular-nums}
+
+.keeper-panel{width:372px; max-height:min(560px, calc(100vh - 140px));
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:15px; box-shadow:var(--shadow); overflow:hidden;
+  display:flex; flex-direction:column}
+.keeper-head{display:flex; align-items:center; gap:10px; padding:13px 15px;
+  border-bottom:1px solid var(--border)}
+.keeper-head .face{width:34px; height:34px; border-radius:11px; flex:0 0 34px;
+  background:var(--brand-soft); display:grid; place-items:center; overflow:hidden}
+.keeper-head .face svg{width:140%; height:140%; margin-top:6%}
+.keeper-head h3{font-size:13.5px}
+.keeper-head p{font-size:11px; color:var(--muted); margin-top:1px}
+.keeper-head .x{margin-left:auto; width:26px; height:26px; border-radius:8px;
+  border:1px solid var(--border2); background:var(--surface2); cursor:pointer;
+  color:var(--muted); line-height:1; font-size:14px}
+
+.keeper-note{padding:9px 15px; font-size:11.5px; line-height:1.5;
+  border-bottom:1px solid var(--border)}
+.keeper-note.ok{color:var(--muted)}
+.keeper-note.warn{background:var(--warn-soft); border-bottom-color:var(--warn-line);
+  color:var(--warn)}
+.keeper-note.bad{background:var(--deny-soft); border-bottom-color:var(--deny-line);
+  color:var(--deny)}
+.keeper-note b{display:block; margin-bottom:2px}
+.keeper-note code{font-size:10.5px; background:transparent; padding:0;
+  color:inherit; opacity:.85}
+
+.keeper-tabs{display:flex; gap:4px; padding:9px 12px 0}
+.keeper-tabs button{flex:1; height:30px; border-radius:8px 8px 0 0; border:0;
+  background:transparent; color:var(--muted); font-size:12px; font-weight:700;
+  cursor:pointer; font-family:var(--sans)}
+.keeper-tabs button.on{background:var(--brand-soft); color:var(--brand-ink)}
+.keeper-body{overflow:auto; flex:1; padding:10px 14px 14px}
+.keeper-foot{display:flex; align-items:center; gap:8px; padding:9px 14px;
+  border-top:1px solid var(--border); background:var(--surface2)}
+.keeper-foot .btn{height:30px; padding:0 11px; font-size:11.5px}
+.keeper-foot .when{font-size:10.5px; color:var(--faint); margin-left:auto}
+
+/* An item in the bubble, tagged with the agent that produced it. */
+.kitem{padding:9px 0; border-bottom:1px solid var(--border)}
+.kitem:last-child{border-bottom:0}
+.kitem .top{display:flex; align-items:baseline; gap:7px}
+.kitem .t{font-size:12.5px; font-weight:700; color:var(--ink); min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.kitem .when{font-size:10.5px; color:var(--faint); margin-left:auto;
+  font-variant-numeric:tabular-nums; flex:0 0 auto}
+.kitem .d{font-size:11.5px; color:var(--muted); margin-top:2px; line-height:1.45}
+.kitem.fresh{box-shadow:inset 3px 0 0 var(--primary); padding-left:9px}
+
+.ktag{display:inline-flex; align-items:center; gap:5px; height:19px;
+  padding:0 8px 0 4px; border-radius:10px; font-size:10px; font-weight:800;
+  background:var(--surface3); color:var(--ink2); flex:0 0 auto;
+  letter-spacing:.02em}
+.ktag .face{width:15px; height:15px; border-radius:5px; overflow:hidden;
+  display:grid; place-items:center; background:var(--surface)}
+.ktag .face svg{width:150%; height:150%; margin-top:8%}
+
+.kday{font-size:10px; font-weight:800; letter-spacing:.08em; color:var(--faint);
+  text-transform:uppercase; margin:13px 0 3px}
+.kday:first-child{margin-top:2px}
+
+/* ======================================================================
+   The setup and launch pages carry the theme's backdrop. They are the only
+   screens with enough empty space for it to be seen.
+   ====================================================================== */
+body.themed{background:var(--bg-art), var(--bg); background-attachment:fixed}

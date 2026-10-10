@@ -183,7 +183,8 @@ class Agent:
                     "in the Policy tab." % rec["reason"])
 
         try:
-            command, tool = tools_mod.build_command(name, arguments, app.path_ctx())
+            command, tool = tools_mod.build_command(
+                name, arguments, app.tool_ctx(self.agent_id))
         except Exception as e:
             return "Could not build that command: %s" % e
 
@@ -204,7 +205,8 @@ class Agent:
 
         diagnosis = ""
         if run["outcome"] in ("blocked", "failed"):
-            diagnosis = _grant_diagnosis(tool, arguments, pol, app.path_ctx())
+            diagnosis = _grant_diagnosis(tool, arguments, pol,
+                                         app.tool_ctx(self.agent_id))
             if diagnosis:
                 run["missingGrants"] = diagnosis
         text = _fmt_result(run, name, notes, diagnosis)
@@ -231,6 +233,7 @@ class Agent:
 
         while True:
             assistant_text = []
+            reasoning = []
             calls = []
             errored = False
 
@@ -240,6 +243,7 @@ class Agent:
                     assistant_text.append(ev["text"])
                     emit({"type": "token", "text": ev["text"]})
                 elif kind == "thinking":
+                    reasoning.append(ev["text"])
                     emit({"type": "thinking", "text": ev["text"]})
                 elif kind == "tool_calls":
                     calls = ev["calls"]
@@ -254,6 +258,25 @@ class Agent:
             text = "".join(assistant_text).strip()
             if errored:
                 break
+
+            # A reasoning model can finish a turn having written its entire
+            # answer into the reasoning channel and emitted no content at all.
+            # It is not a failure - the tools ran, the data came back, the
+            # model worked it out - but with nothing in `content` the chat
+            # window shows a blank reply underneath three successful sandbox
+            # runs, which reads as "the sandbox ate my answer". Showing the
+            # reasoning, labelled, is the honest repair: it is the model's own
+            # words about the data it really read.
+            #
+            # lemonade.py asks for reasoning to be off, so this should be rare.
+            # It is here because "should be" is doing a lot of work in that
+            # sentence - the kwarg is advisory and some builds ignore it.
+            if not text and not calls and reasoning:
+                text = ("".join(reasoning).strip() +
+                        "\n\n_(The model wrote that in its reasoning channel "
+                        "rather than its reply. Set lemonade.thinking in "
+                        "config.json if you want to see this happen.)_")
+
             if text:
                 final_text.append(text)
 

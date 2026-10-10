@@ -8,10 +8,12 @@ import threading
 import time
 
 from . import agents as agents_mod
+from . import basecamp as basecamp_mod
 from . import mailbox as mailbox_mod
 from . import policy as policy_mod
 from . import profile as profile_mod
 from . import tools as tools_mod
+from . import vault as vault_mod
 from .lemonade import Lemonade
 from .mxc import Mxc
 
@@ -40,9 +42,21 @@ class App:
             self.project_dir,
             (self.cfg.get("mail") or {}).get("dir") or "mailbox"))
         mailbox_mod.ensure(self.mailbox, self.project_dir)
+        self.vault = os.path.abspath(os.path.join(
+            self.project_dir,
+            (self.cfg.get("vault") or {}).get("dir") or "vault"))
         self.capture_dir = os.path.join(self.project_dir, "receipts")
 
         self.profile = profile_mod.load(self.project_dir)
+        # Seeded with whatever accounts setup collected, so the GitHub records
+        # say the participant's own handle rather than a placeholder. Safe to
+        # run before onboarding: connectors() is empty then and the seed falls
+        # back to its own defaults.
+        vault_mod.ensure(self.vault, self.project_dir, self.connectors())
+
+        # The always-on base agent. Idle until start() decides there is a
+        # profile with a base policy to run under.
+        self.basecamp = basecamp_mod.Basecamp(self)
 
         self.lock = threading.Lock()
         self.runs = []
@@ -65,13 +79,36 @@ class App:
 
     def path_ctx(self):
         return policy_mod.path_context(self.project_dir, self.workspace,
-                                       self.mailbox)
+                                       self.mailbox, self.vault)
+
+    def tool_ctx(self, agent_id=None):
+        """path_ctx plus the three things a tool needs to know about its caller.
+
+        agentVault / agentData / agentId are NOT policy variables and never
+        reach expand() - see the note in policy.path_context. They exist so a
+        persona's record tools can reach its own folder without the model
+        naming a root, and so an invitation can be stamped with the agent that
+        produced it. Keeping them out of the variable table means lint() and
+        compile_config() stay agent-agnostic: a policy file means the same
+        thing no matter who is about to run under it."""
+        ctx = self.path_ctx()
+        if not agent_id:
+            return ctx
+        rec = agents_mod.get(agent_id)
+        ctx["agentId"] = rec["id"]
+        ctx["agentData"] = rec.get("dataFolder") or ""
+        ctx["agentVault"] = (os.path.join(self.vault, rec["vault"])
+                             if rec.get("vault") else "")
+        return ctx
 
     # -- profile ----------------------------------------------------------
 
     def active_agent(self):
         p = self.profile or {}
         return p.get("activeAgent") or agents_mod.DEFAULT_ID
+
+    def connectors(self):
+        return (self.profile or {}).get("connectors") or {}
 
     def set_profile(self, incoming):
         """Save the profile and lay down a policy file for each subagent the
@@ -96,6 +133,13 @@ class App:
             written.append(agent_id)
         self._policies.clear()
         self._policy_mtimes.clear()
+        # Lay down any vault folder that does not exist yet and seed it with
+        # the handles just typed. Same never-overwrite rule as the policy
+        # files above: somebody re-running setup to change a theme must not
+        # lose the invitations their agents have already produced.
+        vault_mod.ensure(self.vault, self.project_dir, self.connectors())
+        # The base agent may have had no policy a moment ago. Now it does.
+        self.basecamp.start()
         return self.profile, written
 
     def apply_preset(self, agent_id, preset_id):
@@ -319,6 +363,10 @@ class App:
                       % (h.get("model"), h.get("baseUrl"),
                          h.get("routePrefix") or ""))
             self.start_warmup()
+
+        # Last, because it spawns sandboxes and there is no point doing that
+        # before we know whether this host can build one.
+        self.basecamp.start()
         return self
 
     # -- warm up ----------------------------------------------------------

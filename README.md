@@ -95,44 +95,71 @@ the host report and exits.
 ## Setting up your agent
 
 The first time through, the launch screen sends you to `/onboard` instead of
-straight into the app. Four questions: your name, what you want to call your
-agent, which subagents to turn on, and a starting policy for each.
+straight into the app. Five questions: your name; what to call your base agent
+and which animal it is; which of the four other agents to turn on and which
+animal each of them gets; three dummy accounts; and a starting policy for
+every agent.
 
 That last one is the point. You are told what each preset grants and what it
-will refuse, and you choose, **before** the agent has done anything. An agent
+will refuse, and you choose, **before** any agent has done anything. An agent
 you named and whose permissions you picked is one you argue with; an agent
 called Assistant is a product you assume somebody else secured.
 
-It writes `profile.json` and one policy file per subagent under `policies\`.
-Neither is in git - forty people clone the same repo, and the name you type is
-yours. A preset cannot grant anything the Policy tab could not; it is a
-starting point, not a privileged one. Settings has a reset, and the Policy tab
-offers the same presets later.
+It writes `profile.json`, seeds `vault\` with each agent's sample data, and
+writes one policy file per agent under `policies\`. None of the three is in
+git - forty people clone the same repo, and the name you type is yours. A
+preset cannot grant anything the Policy tab could not; it is a starting point,
+not a privileged one. Settings has a reset, a theme picker, and the same
+presets later.
 
-## Two subagents
+The accounts step asks for a Gmail address, a Reddit username and a GitHub
+username. These create **local dummy accounts**: nothing authenticates
+anywhere, no password is asked for, no request leaves the machine. The names
+only decide what the sample data says.
 
-**Computer Assist** looks after the device: files, disk, processes. This is
-the agent CastleKeep shipped with.
+## Four agents, and one that is always on
 
-**Triage** reads your email and calendar and tells you what matters. The
-mailbox is a folder of JSON files under `mailbox\`, laid down on first run
-from `workshop\mailbox-seed.json` - a snapshot of a Gmail account made for
-this workshop. **You never log in to anything**, and there is no credential in
-this repo.
+Each of the four **personas** is sealed into its own folder under `vault\`,
+and that folder is the entire world it has:
 
-Mail-as-files is not a shortcut around doing it properly; it is the only shape
+| Agent | Reads | Writes |
+|---|---|---|
+| **Health** | `vault\health\records` - vitals, labs, medications, appointments | `invites`, `outbox` |
+| **Finance** | `vault\finance\ledger` - accounts, transactions, bills, budget | `invites`, `outbox` |
+| **PC Assist** | the device itself, plus `vault\pc-assist\reddit` | the workspace, `invites`, `outbox` |
+| **Coding** | `vault\coding\github` - repos, issues, PRs, notifications | `invites`, `outbox` |
+
+A persona cannot put anything on a calendar. The most it can do is write an
+invitation into its own `invites\` folder and stop.
+
+The **base agent** - the one you named - is what picks those up. Every twenty
+seconds it checks whether any agent's `invites\` or `outbox\` has changed, and
+if so spawns **one real sandbox** under `policies\base.json` to merge them
+into the global calendar and mail view in `mailbox\`. That view lives in the
+floating bubble in the corner, with a counter, and each item is tagged with
+the agent that produced it.
+
+The asymmetry is the whole exercise. The base agent can see across all four
+agents' outgoing folders and into none of their data - not one blood test, not
+one bank balance. Take one `invites` line out of its `paths.read` and that
+agent silently stops reaching the calendar, with the refusal reported in
+Windows' own words, on the next check, with no restart.
+
+Data-as-files is not a shortcut around doing it properly; it is the only shape
 that makes the lesson expressible. The sandbox cannot usefully reach the
 network for this - `hostLoopback` is only grantable on BaseContainer, and
 `verify.py` measures that a contained process cannot reach loopback on the
-tiers most machines get. On disk, "read my inbox but only write to drafts" is
-one line of `paths.read` and one of `paths.write`, enforced by the same
+tiers most machines get. On disk, "read my records but only write to invites"
+is one line of `paths.read` and one of `paths.write`, enforced by the same
 machinery that refuses a read of `C:\Users`. The full reasoning, including why
 pointing the room at live shared IMAP ends with a locked Google account, is at
-the top of `core\mailbox.py`.
+the top of `core\mailbox.py`, and the vault's version of it is at the top of
+`core\vault.py`.
 
-Each subagent has its own prompt, its own tools and its own policy file.
-Switching between them in the rail swaps all three at once, and the Policy tab
-names the file it is editing so you can see it change.
+Each agent has its own prompt, its own tools and its own policy file.
+Switching between them - in the strip above the chat, or in the rail - swaps
+all three at once, and the Policy tab names the file it is editing so you can
+see it change.
 
 ## Phase 1, if you are running this as a workshop
 
@@ -155,17 +182,19 @@ Point a demo at a real credential exactly once and you will understand why.
 
 ## The five tabs
 
-**Chat** is where you talk to whichever subagent the rail has selected. Ask
-Computer Assist what kind of machine this is, or ask Triage what came in that
-needs you today. Each answer involves a real tool call, and each tool call
-spawns a real sandbox, and you can watch them arrive inline, with the command
-and the exact configuration that was sent.
+**Chat** is where you talk to whichever agent is selected - switch with the
+strip of faces above the transcript. Ask Health what your vitals have done
+this month, ask Coding what needs you on GitHub, ask PC Assist what is eating
+the disk. Each answer involves a real tool call, and each tool call spawns a
+real sandbox, and you can watch them arrive inline, with the command and the
+exact configuration that was sent. The base agent's bubble sits in the corner
+throughout, collecting whatever the others produce.
 
 **Control Panel** is the honest view: the tier this host actually gave you,
 which knobs it can enforce, every tool and what it needs, and a running list of
 everything that has been refused and by whom.
 
-**Policy** is the file - the selected subagent's, named at the top of the
+**Policy** is the file - the selected agent's, named at the top of the
 tab. Edit paths, flip network off, switch tools on and off, or start again
 from one of the presets.
 Knobs this host cannot enforce are disabled with the reason attached, rather
@@ -175,17 +204,28 @@ and compiles a fresh sandbox configuration from it.
 
 **Run** is the terminal view, if you would rather watch it that way.
 
-**Settings** is the model, the executor, and your setup - including a reset
-if somebody else needs the machine next.
+**Settings** is the model, the executor, the theme, and your setup -
+including a reset if somebody else needs the machine next.
 
 You can also just edit the files in `policies\` in a text editor. They are the
 same files the tab writes, and the root `policy.json` they are modelled on is
 commented. `COMPILED.md` explains what each field becomes on the wire.
 
+## If you want to read the code
+
+`CODE-TOUR.md` explains the whole codebase, from the first line that runs to
+the last pixel on the screen. It names the file and the function for every
+step, quotes the code, and says why each decision was made. It covers MXC from
+scratch, for readers who have never met it. Start there if you intend to
+change anything.
+
+It is written in ASD-STE100 Simplified Technical English: short sentences,
+active voice, one meaning per word.
+
 ## If you would rather see it than read it
 
 `ARCHITECTURE.md` draws the whole system: the trust boundary, one tool call end
-to end, onboarding, what a subagent actually is, where the mail comes from, and
+to end, onboarding, what an agent actually is, where the data comes from, and
 the three kinds of refusal. The diagrams are Mermaid, which GitHub renders
 inline and VS Code renders with the *Markdown Preview Mermaid Support*
 extension.

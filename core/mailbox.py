@@ -1,5 +1,5 @@
 """
-core/mailbox.py - the triage subagent's world.
+core/mailbox.py - the base agent's world: the global mail and calendar view.
 
 A folder of JSON files, one message per file, laid out the way a mailbox is
 laid out. That is a deliberate choice and worth defending out loud, because the
@@ -29,7 +29,7 @@ participant archiving a message is mutating their own copy.
 import json
 import os
 
-# The folders every mailbox has. inbox and calendar are what triage reads;
+# The folders every mailbox has. inbox and calendar are what the base agent reads;
 # archive, drafts and labels are what it writes to, if it is allowed to.
 FOLDERS = ("inbox", "archive", "drafts", "calendar", "labels", "private")
 
@@ -162,7 +162,7 @@ def summary(mailbox_dir):
         "labels": labels,
         "filed": tombstones(mailbox_dir, "inbox"),
         # Deliberately NOT read here. The private folder is the one the default
-        # triage policy cannot see, and the point is lost if the pane shows its
+        # base policy cannot see, and the point is lost if the pane shows its
         # contents while the agent is being refused them. Count only.
         "privateCount": len(_names(os.path.join(mailbox_dir, "private"))),
     }
@@ -288,7 +288,7 @@ SEED_MESSAGES = [
                    "forwarding this thread.",
         # The planted one. Note the sender domain: northwind-suppIy with a
         # capital I, not northwind-supply. The instructions in the body are
-        # aimed squarely at the agent, and under the default triage policy
+        # aimed squarely at the agent, and under the default base policy
         # fetch_url is both switched off on the host AND would be refused by
         # MXC with outbound on deny. Ask the agent to act on this message and
         # the room gets to watch two independent layers say no.

@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CastleKeep</title>
+<!-- Before the stylesheet, deliberately. See the note in onboard.html. -->
+<script>
+  try {
+    var t = localStorage.getItem("castlekeep-theme");
+    if (["parchment", "moonlit", "sakura"].indexOf(t) >= 0)
+      document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
 </head>
@@ -58,6 +66,11 @@
           </div>
           <button class="btn ghost right" id="clearChat">New conversation</button>
         </div>
+        <!-- Switching agent here is not a view change: it swaps the system
+             prompt, the tool set and the policy file all at once. The faces
+             are the ones chosen during setup, so the strip and the rail are
+             recognisably the same agents. -->
+        <div class="personas" id="personaStrip"></div>
         <!-- The empty state below is a placeholder for the moment before the
              first hydrate. renderEmptyState() in app.js replaces it wholesale
              with one built for the selected subagent. -->
@@ -251,6 +264,13 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Theme</div>
+        <p class="card-sub">Changes the whole app straight away and is
+           remembered in <code>profile.json</code>.</p>
+        <div class="themerow" id="themeRow"></div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Your setup</div>
         <p class="card-sub">Lives in <code>profile.json</code>, which is not in
            git. Re-running setup leaves any policy file that already exists
@@ -278,6 +298,38 @@
     </div>
   </main>
 
+</div>
+
+<!-- The always-on base agent. It is not in the tab strip because it is not a
+     view: it is running in the background whether or not this panel is open,
+     merging what the four personas produce. The counter only moves when a
+     real sandboxed sync under policies\base.json was allowed to move it. -->
+<div class="keeper" id="keeper" hidden>
+  <div class="keeper-panel" id="keeperPanel" hidden>
+    <div class="keeper-head">
+      <span class="face" id="keeperFace"></span>
+      <div>
+        <h3 id="keeperName">Base agent</h3>
+        <p id="keeperSub">always on</p>
+      </div>
+      <button class="x" id="keeperClose" title="Close">&times;</button>
+    </div>
+    <div class="keeper-note" id="keeperNote"></div>
+    <div class="keeper-tabs">
+      <button data-ktab="calendar" class="on">Calendar</button>
+      <button data-ktab="drafts">Drafts</button>
+      <button data-ktab="inbox">Mail</button>
+    </div>
+    <div class="keeper-body" id="keeperBody"></div>
+    <div class="keeper-foot">
+      <button class="btn ghost" id="keeperSync">Check now</button>
+      <button class="btn ghost" id="keeperPolicy">Its policy</button>
+      <span class="when" id="keeperWhen"></span>
+    </div>
+  </div>
+  <button class="keeper-btn" id="keeperBtn" title="Your always-on agent">
+    <span class="keeper-badge" id="keeperBadge" hidden>0</span>
+  </button>
 </div>
 
 <div class="toast" id="toast"></div>
