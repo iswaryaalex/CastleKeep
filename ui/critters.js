@@ -20,6 +20,31 @@
  *   .  transparent      w  eye white       p  pink: nose, inner ear
  *   o  outline          e  pupil           a  accent: fronds, tufts
  *   b  body             s  body shade      l  light: muzzle, chest
+ *
+ * ---------------------------------------------------------------------------
+ * Motion
+ *
+ * The art is emitted as six stacked <g> layers rather than one flat blob, and
+ * style.css moves the layers. Nothing here knows the timings; this file only
+ * promises the layers exist and are named.
+ *
+ *     back  .ck-tail     the tail, drawn FIRST so its root is hidden
+ *           .ck-ears     rows 0-3, drawn behind the skull for the same reason
+ *           .ck-base     row 4 down: skull, face, chest
+ *           .ck-frond    the axolotl's gills, left and right, split out
+ *           .ck-lid      shut eyes, opacity 0, flashed on to blink
+ *    front  .ck-smile    the happy mouth, opacity 0, flashed on to smile
+ *
+ * Every animation is an OPACITY TOGGLE or a WHOLE-PIXEL TRANSLATE held with
+ * step-end. That is the one rule, and it is load-bearing: this is pixel art
+ * rendered with shape-rendering="crispEdges", so anti-aliasing is off, and
+ * anything that rotates or lands on a half pixel shows its teeth. Whole-pixel
+ * steps are also how the thing it is imitating actually worked.
+ *
+ * Both moving layers hide their own seams. The ears twitch DOWNWARD by a
+ * pixel, into row 4, which .ck-base then paints over - twitch them up and the
+ * ear tears away from the skull. The tail sways a pixel either way and its
+ * root sits under the chest, so the join never has to be drawn.
  */
 
 const W = 22;
@@ -114,6 +139,68 @@ const MOUTHS = {
   asleep:   "...obbbllbppbllbbbo...",
 };
 
+/* Tails. Full 22-row grids so they paint through the same code path, but only
+   the right-hand columns are ever used. Two rules kept them drawable in the
+   gap the bust leaves:
+
+   - Nothing past x=20. The sway shifts a pixel each way and the viewBox clips
+     at 22, so a pixel parked on the edge would wink out on half the frames.
+   - The root is drawn INSIDE the chest, under columns the body also fills.
+     The body paints over it, so the tail appears to come from behind the
+     shoulder and there is no join to get wrong when it moves.
+
+   The owl's is a stub fan rather than a tail, which is what an owl has, and
+   the bunny's is a puff that is over before it starts. Neither of them is
+   really a wag - see the per-state durations in style.css. */
+const TAILS = {
+  // Bushy, with the cream tip the fox is mostly known for.
+  fox: {
+    15: ".................ollo.",
+    16: "................obllo.",
+    17: "................obbbo.",
+    18: "................obbbo.",
+    19: "................obbbo.",
+    20: ".................obo..",
+    21: ".................ooo..",
+  },
+  // Thin and high, and it stops at row 19. Carried any lower it passes behind
+  // the widest part of the chest, disappears for two rows, and surfaces under
+  // the hem as a stub with nothing joining it to the cat.
+  cat: {
+    12: "...................oo.",
+    13: "..................obo.",
+    14: ".................obo..",
+    15: "................obo...",
+    16: "................obo...",
+    17: "................obo...",
+    18: "................obo...",
+    19: "...............obo....",
+  },
+  owl: {
+    17: ".................oo...",
+    18: "................obbo..",
+    19: "................obbo..",
+    20: "................obbo..",
+    21: "................oooo..",
+  },
+  bunny: {
+    17: ".................oo...",
+    18: "................ollo..",
+    19: "................ollo..",
+    20: ".................oo...",
+  },
+  // Accent, not body: the fin is the same translucent pink as the fronds, so
+  // the two signature parts of the axolotl read as one material.
+  axolotl: {
+    16: ".................aa...",
+    17: "................oaaao.",
+    18: "...............obaaao.",
+    19: "...............obaao..",
+    20: "..............obaao...",
+    21: "..............oooo....",
+  },
+};
+
 /* Signature details, by row index. */
 const OVERLAY = {
   owl: {
@@ -202,10 +289,72 @@ function paint(grid, pal) {
   return svg;
 }
 
+/* ---------------------------------------------------------------- layers */
+
+const BLANK = ".".repeat(W);
+const H = 22;
+
+/* Every splitter below blanks cells out rather than cropping the grid, so a
+   layer keeps its row and column indices and paints with the untouched
+   `paint` above. Four hundred and eighty-four dots is not worth optimising. */
+
+function fromRows(map) {
+  const g = new Array(H).fill(BLANK);
+  for (const y of Object.keys(map)) g[y] = map[y];
+  return g;
+}
+
+function band(grid, from, to) {            // keep rows [from, to)
+  return grid.map((row, y) => (y >= from && y < to ? row : BLANK));
+}
+
+function only(grid, want) {                // keep cells matching a predicate
+  return grid.map((row) =>
+    Array.prototype.map.call(row, (ch, x) => (want(ch, x) ? ch : ".")).join(""));
+}
+
+function layer(name, grid, pal) {
+  const body = paint(grid, pal);
+  // An empty <g> is four species out of five for the fronds. Drop it rather
+  // than give style.css a node that will never have anything to move.
+  return body ? `<g class="${name}">${body}</g>` : "";
+}
+
+/* The two flash layers ship with opacity="0" as an ATTRIBUTE, not as CSS.
+   If style.css is slow, blocked, or someone pulls the animations out, a
+   critter that is merely motionless is fine - one stuck mid-blink with a
+   grin pasted over its mouth is not. */
+function flash(name, grid, pal) {
+  const body = paint(grid, pal);
+  return body ? `<g class="${name}" opacity="0">${body}</g>` : "";
+}
+
 export function critterSvg(species, state, cls) {
-  const pal = PALETTE[species] || PALETTE.fox;
-  const body = paint(rows(PALETTE[species] ? species : "fox", state), pal);
-  return `<svg class="${cls || ""}" viewBox="0 0 22 22" ` +
-         `shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">` +
-         `${body}</svg>`;
+  const sp = PALETTE[species] ? species : "fox";
+  const st = EYES[state] ? state : "idle";
+  const pal = PALETTE[sp];
+  const grid = rows(sp, st);
+
+  // The accent colour is only ever the axolotl's gills, so pulling `a` out of
+  // the body is enough to get a layer that can flutter on its own - no second
+  // copy of the art, and no list of which rows are fronds this week.
+  const isFrond = (ch) => ch === "a";
+  const body = only(grid, (ch) => !isFrond(ch));
+
+  const fronds = only(grid, isFrond);
+  const left  = only(fronds, (ch, x) => x < W / 2);
+  const right = only(fronds, (ch, x) => x >= W / 2);
+
+  return `<svg class="ck ck-${sp} ck-${st}${cls ? " " + cls : ""}" ` +
+         `viewBox="0 0 22 22" shape-rendering="crispEdges" ` +
+         `xmlns="http://www.w3.org/2000/svg">` +
+         layer("ck-tail", fromRows(TAILS[sp] || {}), pal) +
+         layer("ck-ears", band(body, 0, BODY_FROM - 1), pal) +
+         layer("ck-base", band(body, BODY_FROM - 1, H), pal) +
+         layer("ck-frond l", left, pal) +
+         layer("ck-frond r", right, pal) +
+         flash("ck-lid", fromRows({ [EYE_UPPER]: EYES.asleep[0],
+                                    [EYE_LOWER]: EYES.asleep[1] }), pal) +
+         flash("ck-smile", fromRows({ [MOUTH]: MOUTHS.happy }), pal) +
+         `</svg>`;
 }

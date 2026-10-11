@@ -113,8 +113,14 @@ that belongs on the calendar or in the mail, it writes it into its own \
 invites\\ or outbox\\ folder. Your job is to collect those and merge them into \
 mailbox\\, which is the one place {user} actually looks.
 
-Use sync_vaults to do that merge. Use the mail and calendar tools to answer \
-questions about the merged result.
+The merge happens on its own every few seconds, in the background. You do not \
+have to start it. Only call sync_vaults if {user} asks you to check right now, \
+or asks why something has not arrived.
+
+To answer a question, read. Use list_messages and read_message for mail, \
+list_events and find_free_slot for the calendar, and search_mail to find \
+something by phrase. Start with list_messages when you are asked what has \
+arrived or what needs attention - the answer is in the mail, not in the merge.
 
 You can see every persona's invites and outbox. You cannot see any persona's \
 data - not one blood test, not one bank balance - and you should not ask for \
@@ -157,6 +163,16 @@ _CODING_PROMPT = _persona_prompt(
 You hold a snapshot of their GitHub: repositories, open issues, open pull \
 requests and unread notifications. When {user} asks what needs them, lead with \
 review requests and failing checks, then high-priority bugs.
+
+You can also check out and build repositories. Your scratchpad is your working \
+directory whenever you run a command, and a checkout of the rockshop repository \
+is in the folder rockshop inside it. To update it, run_command \
+`git -C rockshop pull`. To build it, run_command `rockshop\\build.cmd`. Use \
+read_file (for example on rockshop\\build.cmd) to see what a repo does before \
+you build it. Running a repo's own build runs it inside the same \
+sandbox and the same policy as every other tool call: if the build reaches for \
+a file or the network it was not granted, the sandbox refuses it, and you say \
+so plainly and name the grant that was missing rather than trying another way.
 """)
 
 
@@ -283,7 +299,80 @@ _ASSIST_DEVICE_RO = {
 
 HEALTH_PRESETS = _persona_presets("health", "records", "Health")
 FINANCE_PRESETS = _persona_presets("finance", "ledger", "Finance")
-CODING_PRESETS = _persona_presets("coding", "github", "Coding")
+# The coding agent is the one persona wired to pull and run code - a GitHub
+# agent that could not check out and build a repo would be a strange thing. On
+# top of the shared record hands it carries run_command plus read/list, and it
+# gets two extra presets built for one demo: pull a real public repo into its
+# scratchpad and build it, contained or not, decided by nothing but which of
+# these two policy files is on disk.
+#
+# The scratchpad is the FIRST write entry in both presets on purpose. app.py's
+# working_dir() starts every sandbox in the first writable path that exists, so
+# this is what makes the run_command sandbox start inside
+# vault\coding\github\scratchpad - which lets the agent say `git -C rockshop
+# pull` and `rockshop\build.cmd` with no absolute path baked into the prompt.
+# Network is 'allow' in BOTH, because the pull is a real fetch from GitHub and a
+# refusal there would land on the wrong thing; the lever that contains the
+# payload is the read on C:\CastleKeepLab\private, which only the broad preset
+# grants. See WORKSHOP.md -> "A payload that arrives through GitHub".
+# No list_files: it uses cmd/dir, which this sandbox tier cannot do (verify.py
+# WARNs it), so the model burns a call on it and misreads the refusal as a
+# missing grant. read_file uses PowerShell and works; that is how the agent
+# inspects a repo before building it.
+_CODING_DEMO_TOOLS = dict(_RECORD_TOOLS_FULL,
+                          read_file=True, run_command=True)
+
+_SCRATCH = "${vault}\\coding\\github\\scratchpad"
+
+CODING_PRESETS = _persona_presets("coding", "github", "Coding") + [
+    {
+        "id": "release-manager",
+        "label": "Release manager (broad)",
+        "summary": "It can pull a repo into its scratchpad and build it, and "
+                   "that build step can read C:\\CastleKeepLab\\private and write "
+                   "to your home folder. The convenient grant nobody reads twice.",
+        "refuses": "Almost nothing it is likely to be asked for - which is the "
+                   "warning, not the feature. A build hook in the repo it pulled "
+                   "inherits every one of these grants.",
+        "policy": _policy(
+            "coding-release-manager",
+            "Pull-and-build with a broad hand: read C:\\CastleKeepLab\\private, "
+            "write to ${home}. This is what 'just let the build work' looks like "
+            "written down, and why writing it down is the point - a payload in the "
+            "repo's build step runs with exactly this reach.",
+            read=["${system32}", "${programfiles}", "${localappdata}",
+                  "C:\\CastleKeepLab\\private", "${vault}\\coding\\github"],
+            write=[_SCRATCH, "${home}",
+                   "${vault}\\coding\\invites", "${vault}\\coding\\outbox"],
+            outbound="allow",
+            tools=_CODING_DEMO_TOOLS),
+    },
+    {
+        "id": "sandboxed-build",
+        "label": "Sandboxed build (scoped)",
+        "summary": "It can still pull and build the exact same repo, but the "
+                   "build runs sealed to the scratchpad and this agent's own "
+                   "vault. No read on private\\, no write to your home folder.",
+        "refuses": "Reading C:\\CastleKeepLab\\private and writing anywhere near "
+                   "your home folder. The build hook runs - and Windows refuses "
+                   "it the moment it reaches for the key.",
+        "policy": _policy(
+            "coding-sandboxed-build",
+            "Pull-and-build, contained: the build may read this agent's own "
+            "github\\ data (its scratchpad included) and write only the scratchpad "
+            "and its two outgoing folders. The same build step that staged a key "
+            "under the broad preset now gets 'Access is denied' on the read, from "
+            "the sandbox, not the model. It differs from the broad preset in "
+            "exactly two entries: no read on private\\, no write to ${home}. "
+            "Network stays open so the pull is never the thing that refuses.",
+            read=["${system32}", "${programfiles}", "${localappdata}",
+                  "${vault}\\coding\\github"],
+            write=[_SCRATCH,
+                   "${vault}\\coding\\invites", "${vault}\\coding\\outbox"],
+            outbound="allow",
+            tools=_CODING_DEMO_TOOLS),
+    },
+]
 
 # The computer assistant is the one persona that also touches the machine, so
 # its presets carry the device tools and the workspace on top of the shared
@@ -509,7 +598,8 @@ REGISTRY = [
         ],
         "systemTemplate": _CODING_PROMPT,
         "tools": ["list_records", "read_record", "search_records",
-                  "create_invite", "draft_message", "fetch_url"],
+                  "create_invite", "draft_message", "fetch_url",
+                  "read_file", "run_command"],
         "policyFile": "policies/coding.json",
         "presets": CODING_PRESETS,
         "sidePane": "mission",

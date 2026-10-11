@@ -268,6 +268,12 @@ flowchart TB
 A host gate is the agent's own harness declining, and a harness is exactly the
 layer the whole exercise argues you cannot trust. It is blue for a reason.
 
+A **timeout** is deliberately not on that list. When a command outlives
+`limits.timeoutMs`, MXC stops it and CastleKeep reports outcome `timeout` in
+amber. Nothing was refused and no grant was missing - the work was simply too
+big for one call. The model is told exactly that, so it asks for less instead
+of giving up.
+
 ---
 
 ## 7. The file map

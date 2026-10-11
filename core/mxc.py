@@ -176,10 +176,49 @@ def _classify(exit_code, stdout, stderr):
                          host cannot enforce.
       blocked          : the sandbox was built, the command ran, and the
                          policy stopped it from touching something.
+      timeout          : the sandbox was built, the command ran, and it was
+                         still running when limits.timeoutMs expired. Nothing
+                         was refused. It was simply too slow.
       ok / failed      : the command ran and succeeded, or failed on its own
                          merits.
     """
     blob = (stderr or "") + "\n" + (stdout or "")
+
+    # 0. Did the command run out of time?
+    #
+    # This has to come first, and it has to read MXC's structured envelope
+    # rather than the prose. The timeout message is "script timed out after
+    # 5000ms", and the _DENIED_INSIDE table below matches the bare words
+    # "timed out" as evidence of a blocked network - so without this branch a
+    # slow tool call was reported as outcome "blocked", reason "network
+    # blocked". That is wrong twice over. The user was told a network rule
+    # stopped a filesystem read, and _fmt_result told the MODEL it had been
+    # REFUSED BY POLICY and must not retry, when the honest answer is "that
+    # took too long, ask for less or raise limits.timeoutMs".
+    #
+    # Measured, not guessed: a 30-second sleep under limits.timeoutMs=5000
+    # returns exit code 4294967295 with that envelope on stderr.
+    for m in _JSON_OBJ.finditer(stderr or ""):
+        try:
+            obj = json.loads(m.group(0))
+        except ValueError:
+            continue
+        err = obj.get("error") if isinstance(obj.get("error"), dict) else None
+        if not err:
+            continue
+        msg = str(err.get("message") or "")
+        hit = re.search(r"timed out after\s*(\d+)\s*ms", msg, re.I)
+        if hit:
+            return {
+                "outcome": "timeout",
+                "kind": "timeout",
+                "reason": "The command was still running after %s ms and MXC "
+                          "stopped it. That limit is limits.timeoutMs in the "
+                          "policy." % hit.group(1),
+                "detail": msg,
+                "timeoutMs": int(hit.group(1)),
+                "offendingField": "limits.timeoutMs",
+            }
 
     # 1. Did wxc-exec itself refuse? It emits a structured error object.
     for m in _JSON_OBJ.finditer(stderr or ""):

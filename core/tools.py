@@ -102,8 +102,10 @@ class Tool(object):
         self.shell = shell
         self.needs = needs or []
         self.danger = danger
-        # True for the record tools, whose 'folder' argument can only ever be
-        # one of three names and which one depends on who is asking.
+        # What kind of folder enum this tool's `folder` argument gets:
+        #   "vault"            - this agent's own three folders, from the registry
+        #   (a, b, c) tuple    - a fixed list, for the shared mailbox
+        #   None               - no folder argument
         self.folder_enum = folder_enum
         # fn(args, ctx) -> {"read": [...], "write": [...]}: the paths this call
         # is about to touch. Used ONLY to explain a refusal after MXC has
@@ -138,26 +140,38 @@ class Tool(object):
         return self.agent
 
     def schema(self, agent_id=None):
+        """The tool as the model sees it, for one agent.
+
+        Any `folder` argument is turned into an enum of the folders that
+        actually exist. Prose does not survive contact with a small model:
+
+          * Asked "what have my vitals done", the model called
+            list_records(folder="health") - the name of the VAULT, which is
+            not a folder - then retried the identical call.
+          * Asked "what came in that needs me today", it called
+            list_messages(folder="finance"), then "health", then "coding",
+            then "computer assistance". It had invented a mailbox folder per
+            agent and spent four of its eight calls proving they were absent.
+
+        An enum costs nothing and the sampler cannot step outside it.
+        """
         props = self.parameters.get("properties", {})
-        if self.folder_enum and agent_id:
-            # Name the three folders this particular agent actually has,
-            # rather than describing them in prose and hoping.
-            #
-            # Measured, not guessed: asked "what have my vitals done", a 2B
-            # model called list_records(folder="health") - the name of the
-            # VAULT, which is not a folder at all - got a failure, and retried
-            # the identical call. A free-text argument invites that, and no
-            # amount of "defaults to your own data folder" in a description
-            # competes with an enum the sampler cannot step outside of.
+        folders, why = None, ""
+        if self.folder_enum == "vault" and agent_id:
             rec = agents_mod.get(agent_id)
             folders = [f for f in (rec.get("dataFolder"), "invites", "outbox") if f]
+            why = ("'%s' is your own data; invites and outbox are what you "
+                   "produce." % folders[0])
+        elif isinstance(self.folder_enum, (tuple, list)):
+            folders = list(self.folder_enum)
+            why = "These are the only folders that exist."
+        if folders:
             props = dict(props)
             props["folder"] = {
                 "type": "string",
                 "enum": folders,
-                "description": "Which of your folders. '%s' is your own data; "
-                               "invites and outbox are what you produce. "
-                               "Defaults to '%s'." % (folders[0], folders[0]),
+                "description": "Which folder. %s Defaults to '%s'."
+                               % (why, folders[0]),
             }
         return {"type": "function", "function": {
             "name": self.name,
@@ -445,22 +459,50 @@ def _data_folder(a, ctx):
 
 
 def _b_list_records(a, ctx=None):
-    # id | date | title, not bare file names. An agent that has to open every
-    # record to find out what it is burns its whole tool budget on the listing,
-    # and maxToolCallsPerTurn is 8.
+    """One JSON object per record: id, date, title. Not bare file names.
+
+    An agent that has to open every record to find out what it is burns its
+    whole tool budget on the listing, and maxToolCallsPerTurn is 8.
+
+    JSON rather than 'id | date | title', and that was measured. Asked "what
+    needs me on GitHub today", the model read the pipe-separated line
+    `issues | 2026-10-08 | Open issues...` and called
+    read_record(id="issues|2026-10-08") - it had no way to know where the id
+    stopped. Four of its eight calls died that way and the turn produced no
+    answer at all. A delimiter the model has to guess at is a delimiter that
+    will be guessed wrong; a named field is not."""
     return shell_ps(
         "$ErrorActionPreference='Stop';"
         "Get-ChildItem -LiteralPath %s -Filter *.json -File | Sort-Object Name | "
         "ForEach-Object {"
         "  $r = Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json;"
-        "  '{0} | {1} | {2}' -f $_.BaseName, $r.date, $r.title }"
+        "  [pscustomobject]@{ id=$_.BaseName; date=$r.date; title=$r.title } |"
+        "  ConvertTo-Json -Compress }"
         % _psq(_vault_dir(ctx, _data_folder(a, ctx))))
 
 
+def _clean_id(raw):
+    """The record id, with the rest of a listing line taken off the end.
+
+    Belt and braces for the bug described in _b_list_records. A model that
+    pastes back a whole row - or an id with a stray quote on it - should get
+    the record it obviously meant, not a refusal about a file that was never
+    going to exist.
+
+    This is argument hygiene, not a security check. It cannot widen anything:
+    the folder still comes from the registry and MXC still decides whether
+    that folder is readable."""
+    name = str(raw or "").strip().strip("\"'")
+    for sep in ("|", "\t", "\n"):
+        if sep in name:
+            name = name.split(sep)[0].strip()
+    if name.lower().endswith(".json"):
+        name = name[:-5]
+    return name
+
+
 def _b_read_record(a, ctx=None):
-    name = str(a.get("id") or "")
-    if not name.lower().endswith(".json"):
-        name += ".json"
+    name = _clean_id(a.get("id")) + ".json"
     return shell_ps(
         "$ErrorActionPreference='Stop';"
         "Get-Content -LiteralPath %s -Raw"
@@ -474,7 +516,8 @@ def _b_search_records(a, ctx=None):
         "  $raw = Get-Content -LiteralPath $_.FullName -Raw;"
         "  if ($raw -match [regex]::Escape(%s)) {"
         "    $r = $raw | ConvertFrom-Json;"
-        "    '{0} | {1}' -f $_.BaseName, $r.title } }"
+        "    [pscustomobject]@{ id=$_.BaseName; title=$r.title } |"
+        "    ConvertTo-Json -Compress } }"
         % (_psq(_vault_dir(ctx, _data_folder(a, ctx))),
            _psq(str(a.get("query") or ""))))
 
@@ -733,6 +776,11 @@ def _pl_sync(a, ctx):
 # those hands reach, which is the only difference worth having.
 PERSONAS = tuple(agents_mod.persona_ids())
 
+# The folders the shared mailbox actually has. `private` is on the list on
+# purpose: the base agent is meant to be ABLE to ask for it and be refused by
+# the policy, which is a far better demonstration than a folder it cannot name.
+MAIL_FOLDERS = ("inbox", "archive", "drafts", "private")
+
 
 CATALOGUE = [
     Tool("list_files", "List the files and folders at a path on this machine.",
@@ -745,7 +793,8 @@ CATALOGUE = [
                          "maxLines": {"type": "integer",
                                       "description": "How many lines to read. Default 200."}},
           "required": ["path"]},
-         _b_read_file, paths=_pl_read_arg, shell="powershell", needs=["read access to that file"]),
+         _b_read_file, paths=_pl_read_arg, shell="powershell", needs=["read access to that file"],
+         agent=("computer-assist", "coding")),
 
     Tool("write_file", "Create or overwrite a text file.",
          {"properties": {"path": _str("Absolute Windows path to write."),
@@ -787,7 +836,7 @@ CATALOGUE = [
          {"properties": {"command": _str("The command line to run under cmd.exe.")},
           "required": ["command"]},
          _b_run_command, shell="cmd", needs=["whatever the command touches"],
-         danger=True),
+         danger=True, agent=("computer-assist", "coding")),
 
     # -- base agent: mail -------------------------------------------------------
 
@@ -797,7 +846,7 @@ CATALOGUE = [
                                         "Default inbox.")},
           "required": []},
          _b_list_messages, paths=_pl_folder, shell="powershell", agent="base",
-         needs=["read access to that mailbox folder"]),
+         folder_enum=MAIL_FOLDERS, needs=["read access to that mailbox folder"]),
 
     Tool("read_message", "Read one message as JSON: sender, subject, date, "
                          "labels and full body.",
@@ -806,7 +855,7 @@ CATALOGUE = [
                          "folder": _str("Which folder it is in. Default inbox.")},
           "required": ["id"]},
          _b_read_message, paths=_pl_folder, shell="powershell", agent="base",
-         needs=["read access to that mailbox folder"]),
+         folder_enum=MAIL_FOLDERS, needs=["read access to that mailbox folder"]),
 
     Tool("search_mail", "Find messages containing a phrase. Returns the file "
                         "names that matched, not the messages themselves.",
@@ -814,7 +863,7 @@ CATALOGUE = [
                          "folder": _str("Which folder to search. Default inbox.")},
           "required": ["query"]},
          _b_search_mail, paths=_pl_folder, shell="powershell", agent="base",
-         needs=["read access to that mailbox folder"]),
+         folder_enum=MAIL_FOLDERS, needs=["read access to that mailbox folder"]),
 
     Tool("archive_message", "Move a message out of the inbox into archive.",
          {"properties": {"id": _str("The message id to archive."),
@@ -892,7 +941,7 @@ CATALOGUE = [
                                         "'invites' and 'outbox' also work.")},
           "required": []},
          _b_list_records, paths=_pl_records, shell="powershell", agent=PERSONAS,
-         folder_enum=True, needs=["read access to that folder"]),
+         folder_enum="vault", needs=["read access to that folder"]),
 
     Tool("read_record", "Read one whole record as JSON.",
          {"properties": {"id": _str("The record id, as returned by "
@@ -901,7 +950,7 @@ CATALOGUE = [
                                         "your own data folder.")},
           "required": ["id"]},
          _b_read_record, paths=_pl_records, shell="powershell", agent=PERSONAS,
-         folder_enum=True, needs=["read access to that folder"]),
+         folder_enum="vault", needs=["read access to that folder"]),
 
     Tool("search_records", "Find records containing a phrase. Returns the ids "
                            "and titles that matched, not the records themselves.",
@@ -910,7 +959,7 @@ CATALOGUE = [
                                         "your own data folder.")},
           "required": ["query"]},
          _b_search_records, paths=_pl_records, shell="powershell", agent=PERSONAS,
-         folder_enum=True, needs=["read access to that folder"]),
+         folder_enum="vault", needs=["read access to that folder"]),
 
     Tool("create_invite", "Put a calendar invitation in your invites folder. "
                           "The always-on agent picks it up and puts it on the "

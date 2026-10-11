@@ -134,6 +134,8 @@ reload.
 | [core/vault.py](core/vault.py) | The four sealed persona folders and their data. |
 | [core/basecamp.py](core/basecamp.py) | The always-on base agent thread. |
 | [core/mailbox.py](core/mailbox.py) | The global mail and calendar view. |
+| [core/postman.py](core/postman.py) | Mail that arrives during the session. |
+| [core/icsfeed.py](core/icsfeed.py) | The live calendar, from Google's secret .ics URL. |
 | [core/profile.py](core/profile.py) | Who sits here. Names, faces, accounts, theme. |
 | [core/server.py](core/server.py) | A small HTTP server. Standard library only. |
 | [core/verify.py](core/verify.py) | Proves the claims on your own machine. |
@@ -163,6 +165,18 @@ reload.
 | `mailbox/` | No | The global mail and calendar. Made on first run. |
 | `workspace/` | Yes | A scratch folder for the PC Assist agent. |
 | `receipts/` | No | Denial receipts, if the host supports them. |
+
+### Presenter scripts
+
+You run these before the workshop. Participants never run them.
+
+| Script | Purpose | Needs a credential? |
+|---|---|---|
+| [workshop/mail-snapshot.py](workshop/mail-snapshot.py) | Pull the dummy Gmail account into the seed. | Yes. Gmail app password. |
+| [workshop/github-snapshot.py](workshop/github-snapshot.py) | Pull public repositories into the vault seed. | No. |
+| [workshop/reddit-snapshot.py](workshop/reddit-snapshot.py) | Pull public threads into the vault seed. | Yes. Reddit closed anonymous access. |
+| [workshop/ask.py](workshop/ask.py) | Drive one agent from a terminal. Rehearsal. | No. |
+| [workshop/deliver.py](workshop/deliver.py) | Deliver scheduled mail on a cue. | No. |
 
 ---
 
@@ -237,7 +251,7 @@ self.basecamp.start()
 remote access either, so there is nothing to authenticate.
 
 The server does check the `Origin` header. See
-[core/server.py:52](core/server.py#L52). This stops a web page in another tab
+[core/server.py:53](core/server.py#L53). This stops a web page in another tab
 from driving your agent.
 
 ### Step 5: the browser opens the launch screen
@@ -316,6 +330,67 @@ with every place that was looked at, because a silent miss here is the
 single most annoying way for this project to fail."""
 ```
 
+### Who calls resolve_binary
+
+`resolve_binary` has one caller in the whole project. It is `Mxc.__init__` at
+[core/mxc.py:333](core/mxc.py#L333).
+
+`Mxc.__init__` also has one caller. It is `App.__init__` at
+[core/app.py:75](core/app.py#L75).
+
+So the chain is short. It runs one time for each process:
+
+```
+run.py:49            app = App(HERE)
+  └─ core/app.py:75     self.mxc = Mxc(self.cfg, self.project_dir, on_run=None)
+       └─ core/mxc.py:333   self.exe = resolve_binary(cfg, project_dir)
+```
+
+The search for the binary happens at construction time. It happens before the
+probe. It happens before the web server starts.
+
+**A missing binary does not stop the program.** `Mxc.__init__` catches the
+exception:
+
+```python
+try:
+    self.exe = resolve_binary(cfg, project_dir)
+except BinaryNotFound as e:
+    self.exe_error = str(e)
+```
+
+The failure becomes data. `self.exe` stays `None`. `self.exe_error` holds the
+message. Two functions read that state later:
+
+| Reader | What it returns |
+|---|---|
+| `Mxc.probe` at [core/mxc.py:362](core/mxc.py#L362) | `{"available": False, "error": ..., "tier": None}` |
+| `Mxc.execute` at [core/mxc.py:419](core/mxc.py#L419) | outcome `refused-to-start`, kind `runner_unavailable` |
+
+So the launch screen can show the exact problem and the list of paths. A crash
+at import time cannot do that.
+
+### The two things that are called "probe"
+
+This is a name collision. Keep the two apart in your mind.
+
+| Name | What it is | Where |
+|---|---|---|
+| `Mxc.probe()` | A method. It runs `wxc-exec --probe` in a subprocess. | [core/mxc.py:355](core/mxc.py#L355) |
+| `App.probe` | An attribute. It holds the result of that method. | [core/app.py:78](core/app.py#L78) |
+
+`App.__init__` sets the attribute to `None`. `App.start()` fills it:
+
+```python
+self.probe = self.mxc.probe()                      # core/app.py:346
+self.caps = self.probe.get("capabilities") or {}
+```
+
+`App.start()` runs one time, from [run.py:57](run.py#L57). The `/api/rescan`
+endpoint runs it again. That endpoint first clears `app.mxc._probe_cache`.
+Without that line the cache gives the old answer. See
+[core/server.py:345](core/server.py#L345).
+
 ### The three tiers
 
 Windows gives different containment strength on different machines. MXC calls
@@ -389,7 +464,7 @@ on the host. This is not a shortcut. It is the only arrangement that works.
 
 ### One sandbox run
 
-[core/mxc.py:364](core/mxc.py#L364) `Mxc.execute` is the function that spawns a
+[core/mxc.py:403](core/mxc.py#L403) `Mxc.execute` is the function that spawns a
 sandbox. The steps are short:
 
 ```python
@@ -406,17 +481,226 @@ r = subprocess.run(argv, capture_output=True, text=True, timeout=wall, errors="r
 The configuration goes as base64. This removes every quoting problem between
 Python, the shell, and the binary.
 
-The wall-clock timeout is the policy timeout plus 30 seconds:
+### What that subprocess is, and what it is not
+
+`subprocess.run(argv, ...)` starts **one copy of `wxc-exec.exe`**. Be exact
+about what that process is.
+
+| It is | It is not |
+|---|---|
+| A launcher for one container. | A daemon. |
+| A process that exits when the command exits. | A service that waits for more work. |
+| The thing that builds the sandbox, runs one command, and destroys it. | The agent. |
+| A process that knows only the config it was given. | A place where any code of this project runs. |
+
+The word *daemon* is wrong here, and the difference matters. `wxc-exec.exe`
+starts when a tool call starts. It ends when that tool call ends. The next tool
+call starts a new one. Nothing survives between two tool calls.
+
+Three processes are in play during a session. Each has one job:
+
+| Process | Job | Lifetime |
+|---|---|---|
+| Python (`run.py`) | Holds `App`, the web server, and the agent loop. | The whole session. |
+| Lemonade Server | Serves the model over HTTP on `127.0.0.1`. | The whole session. You start it. |
+| `wxc-exec.exe` | Builds one sandbox. Runs one command. Destroys the sandbox. | One tool call. |
+
+Python speaks to Lemonade with HTTP. Python speaks to `wxc-exec.exe` with
+`subprocess.run`. **Lemonade and `wxc-exec.exe` never speak to each other.**
+
+That last line answers a common question. The model does not call the sandbox.
+The model only writes a tool name and some arguments into its reply. The host
+code reads that reply and decides to spawn a sandbox.
+
+### The full chain for one tool call
+
+This is the connection that no single file shows. Read it from the top.
+
+```
+BROWSER
+  ui/app.js  send()              POST /api/chat  {agent, message, history}
+      │
+      ▼
+SERVER                           core/server.py:353
+  agent = Agent(app, body["agent"])              core/server.py:373
+  agent.turn(message, history, self._sse)
+      │
+      ▼
+AGENT LOOP  (host, no sandbox)   core/agent.py:238   Agent.turn
+  app.lemonade.chat(...)         core/agent.py:259
+      │                                 │
+      │                                 └── HTTP ──► Lemonade ──► the model
+      │                                                             │
+      │   ◄──── the reply carries tool_calls ───────────────────────┘
+      ▼
+  for c in calls:                core/agent.py:321
+      self.call_tool(c["name"], c["arguments"], emit)
+      │
+      ▼
+ONE TOOL CALL                    core/agent.py:169   Agent.call_tool
+  1. pol = app.reload_policy(agent_id)      the policy, read from disk NOW
+  2. the host gate                          stop here, or continue
+  3. tools_mod.build_command(...)           one command line string
+  4. cfg, notes = app.compile_for(pol, command)      core/app.py:331
+  5. app.mxc.execute(cfg, label=name, timeout=...)   core/agent.py:215
+      │
+      ▼
+MXC                              core/mxc.py:403    Mxc.execute
+  base64 the config              core/mxc.py:427
+  argv = [self.exe, "--config-base64", b64]         core/mxc.py:429
+  subprocess.run(argv, ...)      core/mxc.py:446
+      │
+      ▼
+  wxc-exec.exe ─► build container ─► run the command ─► destroy it ─► exit
+      │
+      ▼
+  exit code, stdout, stderr
+  _classify(...)                 core/mxc.py:169
+  ok | blocked | timeout | refused-to-start | failed
+      │
+      ▼
+BACK ON THE HOST
+  app.record_run(run)                        the Run tab
+  emit({"type": "sandbox", ...})   ── SSE ──► the browser
+  text = _fmt_result(run, ...)               core/agent.py:108
+  messages.append({"role": "tool", "content": text})   core/agent.py:324
+      │
+      ▼
+  the loop asks the model again, with the result in the conversation
+```
+
+The loop repeats from `app.lemonade.chat`. It stops when the model asks for no
+more tools. It also stops at `agent.maxToolCallsPerTurn`.
+
+### Where each file sits in that chain
+
+| File | Its one job in a tool call |
+|---|---|
+| `core/server.py` | Receives the request. Makes an `Agent`. Writes SSE frames. |
+| `core/agent.py` | Runs the loop. Decides **when** to run a tool. |
+| `core/app.py` | Holds the shared state. Supplies the policy, the context, and the `Mxc` object. |
+| `core/tools.py` | Turns one tool call into one command line. |
+| `core/policy.py` | Turns one policy into one MXC configuration. |
+| `core/mxc.py` | Turns one configuration into one subprocess. Classifies the result. |
+
+Note what `core/app.py` does **not** do. It owns the one `Mxc` object, but it
+never spawns a container for a tool. `App.start()` is the one exception, and it
+spawns only dry runs.
+
+### Every caller of Mxc.execute
+
+There are five callers. Only one of them is the agent.
+
+| Caller | Why | Real or dry? |
+|---|---|---|
+| [core/agent.py:215](core/agent.py#L215) | One tool call. | Real |
+| [core/policy.py:377](core/policy.py#L377) | Negotiate the network dialect at startup. | Dry |
+| [core/server.py:322](core/server.py#L322) | The Dry-run button in the Policy tab. | Dry |
+| [core/verify.py:169](core/verify.py#L169), [core/verify.py:213](core/verify.py#L213) | The proof suite. | Both |
+| [workshop/pwsh-ladder.py:89](workshop/pwsh-ladder.py#L89) | A presenter script. | Real |
+
+A dry run parses and validates the configuration, then exits. It builds no
+container.
+
+### The three ways a tool call starts
+
+A tool call does not always start with a person. Three entry points exist. All
+three end at the same `Agent.call_tool`, and all three get the same sandbox.
+
+| Entry | Who starts it | Path |
+|---|---|---|
+| The chat | The user sends a message. The model asks for a tool. | `/api/chat` → `Agent.turn` → `Agent.call_tool` |
+| The Tools pane | The user runs one tool by hand. | `/api/tool` → `Agent.call_tool` |
+| The base agent | A timer fires and the vault changed. | `Basecamp._tick` → `_run_sync` → `Agent.call_tool` |
+
+[core/basecamp.py:207](core/basecamp.py#L207) shows the third one:
+
+```python
+agent = Agent(self.app, agents_mod.BASE_ID)
+text = agent.call_tool("sync_vaults", {}, events.append)
+```
+
+The second path and the third path have no model in them. They call one tool
+directly. The policy, the sandbox, and the classification do not change.
+
+### The two timeouts
+
+A tool call has **two** timeouts, one inside the other. They stop different
+processes and they are enforced by different things.
+
+```
+     ┌─ wall ──────────────────────────────────────────────┐
+     │  subprocess.run(timeout=wall)   enforced by PYTHON  │
+     │  stops: wxc-exec.exe                                │
+     │                                                     │
+     │     ┌─ process.timeout ─────────────────────────┐   │
+     │     │  limits.timeoutMs   enforced by MXC       │   │
+     │     │  stops: the command inside the container  │   │
+     │     └───────────────────────────────────────────┘   │
+     └─────────────────────────────────────────────────────┘
+```
+
+**The inner one** is `limits.timeoutMs` from the policy. `compile_config`
+copies it to `process.timeout` in the MXC configuration. MXC enforces it. The
+shipped value is 30000, which is 30 seconds.
+
+**The outer one** is `wall`, in [core/mxc.py:442](core/mxc.py#L442):
 
 ```python
 wall = timeout or (((mxc_config.get("process") or {}).get("timeout") or 30000)
                    / 1000.0 + 30)
 ```
 
-The policy timeout stops the contained process. The wall timeout stops
-`wxc-exec` itself. The second one is a safety net for the first.
+Python enforces it, with `subprocess.run(timeout=wall)`. It is the inner
+timeout plus 30 seconds. The 30 seconds is headroom for container setup and
+teardown, which is work that MXC does outside the command's own budget.
 
-### The three kinds of "no"
+The `or` matters. Every caller except `verify.py` passes `timeout` explicitly,
+so the expression after `or` is a fallback. `Agent.call_tool` at
+[core/agent.py:215](core/agent.py#L215) computes the same value from the same
+policy:
+
+```python
+run = app.mxc.execute(cfg, label=name,
+                      timeout=(pol.get("limits") or {}).get("timeoutMs", 30000)
+                      / 1000.0 + 30)
+```
+
+`negotiate_dialect` passes `timeout=90` instead, because a dry run spawns
+nothing and only needs to parse.
+
+### What happens when a tool call is too slow
+
+This is measured on this hardware, not predicted.
+
+**Case 1: the command exceeds `limits.timeoutMs`.** MXC stops the command and
+writes a structured error:
+
+```
+exit code : 4294967295
+stderr    : {"error":{"code":"backend_error","message":"script timed out after 5000ms"}}
+stdout    : whatever the command printed before it was stopped
+```
+
+`_classify` returns outcome `timeout`. The partial output survives and reaches
+the model. Nothing was refused.
+
+**Case 2: `wxc-exec` itself does not return inside `wall`.** Python raises
+`TimeoutExpired`. `Mxc.execute` catches it:
+
+```python
+except subprocess.TimeoutExpired:
+    code, out, err = None, "", "wxc-exec did not return within %ds" % wall
+```
+
+The outcome is `failed`, the exit code is `None`, and the reason names the
+wall. This case means the executor is stuck, not the command. It is rare.
+
+> **Note.** Case 2 should not normally happen, because `wall` is always larger
+> than `process.timeout`. If you see it, suspect the host and not the policy.
+> `wxc-exec --force-reclaim` tears down an orphaned sandbox.
+
+### The four kinds of "no"
 
 [core/mxc.py:169](core/mxc.py#L169) `_classify` reads the exit code, stdout,
 and stderr. It decides what happened. This function is the heart of the
@@ -432,20 +716,26 @@ a demo that just prints red text.
                      host cannot enforce.
   blocked          : the sandbox was built, the command ran, and the
                      policy stopped it from touching something.
+  timeout          : the sandbox was built, the command ran, and it was
+                     still running when limits.timeoutMs expired. Nothing
+                     was refused. It was simply too slow.
   ok / failed      : the command ran and succeeded, or failed on its own
                      merits.
 """
 ```
 
-There is a fourth outcome that MXC never produces. CastleKeep produces it
+There is one more outcome that MXC never produces. CastleKeep produces it
 itself:
 
-| Outcome | Who refused | Where it is set |
+| Outcome | Who stopped it | Where it is set |
 |---|---|---|
-| `host-gate` | CastleKeep, on the host | [core/agent.py:168](core/agent.py#L168) |
+| `host-gate` | CastleKeep, on the host | [core/agent.py:187](core/agent.py#L187) |
 | `refused-to-start` | `wxc-exec`, before the command | `_classify` step 1 and 2 |
 | `blocked` | Windows, during the command | `_classify` step 3 |
-| `failed` | The command itself | `_classify` fallback |
+| `timeout` | MXC, when `limits.timeoutMs` expired | `_classify` step 0 |
+| `failed` | The command itself, or the wall timeout | `_classify` fallback |
+
+`timeout` is not a refusal. Nothing was denied. The command was too slow.
 
 `host-gate` means that a tool is switched off in `policy.tools`. The request
 never reached a sandbox. The user interface says so, because "CastleKeep
@@ -734,7 +1024,7 @@ def turn(self, user_text, history, emit):
 Four points deserve attention.
 
 **Point 1. The policy is read at the start of the turn and again for each
-tool call.** `Agent.call_tool` at [core/agent.py:157](core/agent.py#L157)
+tool call.** `Agent.call_tool` at [core/agent.py:176](core/agent.py#L176)
 repeats the read:
 
 ```python
@@ -967,7 +1257,7 @@ collects; neither can see the other's private half.
 ### Why a persona cannot name another vault
 
 A persona reaches its own folder through `ctx["agentVault"]`. The model never
-supplies the root. [core/app.py:84](core/app.py#L84) `tool_ctx` injects it:
+supplies the root. [core/app.py:85](core/app.py#L85) `tool_ctx` injects it:
 
 ```python
 rec = agents_mod.get(agent_id)
@@ -1034,6 +1324,104 @@ is cosmetic, and a recursive rewrite of arbitrary participant-supplied text
 into arbitrary JSON is a much larger blast radius than 'the GitHub records
 say your username'."""
 ```
+
+### The postman
+
+[core/postman.py](core/postman.py) delivers mail during the session.
+
+The mailbox is a snapshot, and a snapshot never changes. A room that watches a
+static inbox for an hour never sees the base agent do the one thing it exists
+to do. So some messages ship with a `releaseAt`, wait in
+`mailbox\scheduled\`, and move into `mailbox\inbox\` when their moment
+comes.
+
+**This is not the agent fetching mail.** The header says so first:
+
+```python
+This is not the agent fetching mail, and the UI must not say that it is. This
+is the POSTMAN. It stands in for Gmail's servers, and like Gmail's servers it
+runs outside the sandbox with no policy over it. The agent's half is still
+exactly what it was: list_messages and read_message, through a sandbox, under
+policies\base.json, refused if the grant is missing.
+```
+
+Two sentences that must stay apart: *the mail server delivered a message* and
+*your assistant was allowed to read it*.
+
+| Function | Purpose |
+|---|---|
+| `anchor()` | When the session clock started. Written once, then left alone. |
+| `due_at()` | Turn a `releaseAt` into an epoch. `+6m`, `+00:06:00`, or an ISO date. |
+| `pending()` | What is still in the sack, soonest first, with `dueIn`. |
+| `tick()` | Deliver everything that is due. Called by the basecamp thread. |
+| `deliver_next()` | Deliver one now, on a cue. The presenter's button. |
+| `reset_anchor()` | Start the clock again. For a second rehearsal. |
+
+A message with `releaseAt: null` never arrives on a timer. It waits for the
+presenter. That is a useful thing for a message to do.
+
+Delivery removes the file from `scheduled\`, so a delivered message cannot
+come back on restart. `_first_run()` guards the seeding for the same reason.
+
+The clock is anchored at setup, in [core/app.py:150](core/app.py#L150):
+
+```python
+# Establish, not reset: somebody who re-runs setup twenty minutes in
+# to change a theme must not have the remaining post pushed back by
+# twenty minutes.
+postman_mod.anchor(self.mailbox, self.profile)
+```
+
+### The calendar feed
+
+[core/icsfeed.py](core/icsfeed.py) refreshes the calendar from Google during
+the session.
+
+Google Calendar publishes a **secret address in iCal format**. It is an
+unguessable read-only URL. It needs no credential.
+
+So the calendar is the one half of a Google account that CastleKeep can read
+at runtime. It reads it on every machine. Nothing ships that could be abused.
+
+Mail cannot work this way, and the difference is why
+`workshop\mail-snapshot.py` still has to be run by hand:
+
+| | Source | Access | Credential |
+|---|---|---|---|
+| Calendar | secret `.ics` URL | read-only by construction | none |
+| Mail | IMAP or Gmail API | read **and** write | a real one |
+
+Like the postman, this is **not the agent fetching anything**. It is the
+calendar server's feed, pulled on the host.
+
+It has to be. A sandboxed process on this tier cannot reach the network.
+
+The agent's half is unchanged. `list_events` still goes through a sandbox. It
+is still refused if `policies\base.json` does not grant the calendar.
+
+**The part that matters: it must not clobber the agents.**
+`mailbox\calendar\<date>.json` is written by two different things - this
+feed, and `sync_vaults` merging persona invitations. So every event records
+where it came from:
+
+| `source` | Written by | Survives a refresh? |
+|---|---|---|
+| `calendar` | this feed, `sourceId` starts `ics:` | replaced each time |
+| `health`, `finance`, … | a persona agent, through a sandbox | **yes, always** |
+| `seed` | the built-in sample | swept once a real feed lands |
+
+`merge_into()` makes three passes. The third is the one people forget.
+
+Move an event to a different day in Google and a copy stays on the old day.
+So every `ics:` event that is no longer in the feed must be swept up.
+
+This was measured, not assumed. A health agent appointment sat at 14:30,
+between two real Google events. A forced refresh reported
+`events: 7, keptFromAgents: 1`. The 14:30 stayed exactly where it was.
+
+`refresh()` never raises. A calendar can be unreachable for several reasons:
+no wifi, a rotated secret address, or a captive portal. In each case the last
+good copy stays on disk. The error is reported next to it.
 
 ### The always-on base agent
 
@@ -1297,7 +1685,7 @@ room, and the note about fasting.
 ### Step 7. The model writes the invite
 
 The model calls `create_invite` with those values.
-[core/tools.py:486](core/tools.py#L486) `_b_create_invite` builds the record:
+[core/tools.py:529](core/tools.py#L529) `_b_create_invite` builds the record:
 
 ```python
 source = _source_of(ctx)                       # "health", from ctx["agentId"]
@@ -1409,6 +1797,9 @@ library. It serves the files in `ui/` and a small JSON API.
 | POST | `/api/policy/dryrun` | Compile and `--dry-run` it. |
 | POST | `/api/basecamp/sync` | Force a sync on the next tick. |
 | POST | `/api/basecamp/read` | Clear the unread badge. |
+| POST | `/api/mailbox/deliver` | Deliver the next scheduled message, or one by id. |
+| POST | `/api/mailbox/reset-clock` | Start the session clock again. |
+| POST | `/api/calendar/refresh` | Pull the .ics feed now and merge it. |
 | POST | `/api/warmup`, `/api/rescan` | Re-check the model and the host. |
 | POST | `/api/chat` | The agent loop. Returns SSE. |
 | POST | `/api/tool` | Run one tool by hand. Returns SSE. |
@@ -1416,7 +1807,7 @@ library. It serves the files in `ui/` and a small JSON API.
 
 ### The agent query parameter
 
-[core/server.py:146](core/server.py#L146) `_agent_param` decides which agent a
+[core/server.py:147](core/server.py#L147) `_agent_param` decides which agent a
 request is about. It has three cases:
 
 ```python
@@ -1454,7 +1845,7 @@ not produce a stack trace.
 
 ### The request body must always be read
 
-[core/server.py:75](core/server.py#L75) `_read_body` runs for every POST,
+[core/server.py:76](core/server.py#L76) `_read_body` runs for every POST,
 before dispatch. This is not optional. The docstring explains:
 
 ```python

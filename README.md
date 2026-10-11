@@ -117,6 +117,61 @@ username. These create **local dummy accounts**: nothing authenticates
 anywhere, no password is asked for, no request leaves the machine. The names
 only decide what the sample data says.
 
+## The calendar is live; the mailbox is a snapshot
+
+Those two halves of a Google account need different things, and the split is
+not arbitrary:
+
+| | Source | Access | Credential | Refreshes |
+|---|---|---|---|---|
+| Calendar | secret `.ics` URL | read-only by construction | **none** | every 10 min, on every machine |
+| Mail | IMAP | read **and** write | app password | once, by the presenter |
+
+So the calendar can be genuinely live for forty people with nothing shipped
+that could be abused. Put the address in `config.json`:
+
+```json
+"calendar": {
+  "icsUrl": "https://calendar.google.com/calendar/ical/.../basic.ics",
+  "refreshMinutes": 10, "daysBack": 7, "daysAhead": 45
+}
+```
+
+Google Calendar → Settings → *your calendar* → **Secret address in iCal
+format**. Treat that URL as a password: anyone holding it can read the
+calendar. Rotate it when the workshop is over.
+
+With `icsUrl` set, the synthetic sample calendar is not laid down at all - a
+real calendar and an invented one in the same pane is worse than either alone.
+
+A refresh **never overwrites what an agent produced**. Every event records its
+source, and only events this feed owns are replaced. See `core\icsfeed.py`.
+
+## Mail that arrives during the session
+
+The inbox is a snapshot, but not a frozen one. Some messages ship with a
+`releaseAt`, wait in `mailbox\scheduled\`, and move into the inbox when
+their moment comes - measured from the moment you finished setup. The bubble's
+badge moves when they land.
+
+That delivery is host-side and the code says so loudly: it is the mail server,
+not the agent. What the agent may *read* is still `policies\base.json`,
+through a sandbox. See the header of `core\postman.py`.
+
+It is a timed release rather than a live mail poll, and that is deliberate.
+Forty laptops on one Gmail account lock it within minutes, shared live mail is
+shared mutable state, and an app password on every machine is the last thing
+you want in an app that spends its afternoon demonstrating prompt injection.
+A timed release needs no network, no credential and no conference wifi, and it
+fires identically on forty machines.
+
+A presenter can override the clock:
+
+```
+python workshop\deliver.py           what is still to come, and when
+python workshop\deliver.py --now     deliver the next one now
+```
+
 ## Four agents, and one that is always on
 
 Each of the four **personas** is sealed into its own folder under `vault\`,

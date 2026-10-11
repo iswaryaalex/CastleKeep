@@ -478,6 +478,9 @@ function drawMail(box, items, emptyText) {
 const OUTCOME = {
   "ok":               ["ok",    "allowed"],
   "blocked":          ["bad",   "blocked by policy"],
+  // Amber, not red. A timeout is the policy's time limit doing its job, not
+  // an access refusal - colouring it like a block teaches the wrong lesson.
+  "timeout":          ["warn",  "stopped on time"],
   "refused-to-start": ["warn",  "sandbox refused to start"],
   "host-gate":        ["info",  "stopped on the host"],
   "failed":           ["coral", "failed"],
@@ -1217,6 +1220,76 @@ function term(text, cls) {
 }
 $("clearTerm").addEventListener("click", () => ($("term").innerHTML = ""));
 
+/* The sack, for the presenter. Drawn from /api/basecamp, which the bubble is
+ * already polling, so this costs nothing extra. */
+function renderPost() {
+  const box = $("postList");
+  if (!box) return;
+  const post = ((K.data || {}).post) || [];
+  box.innerHTML = "";
+  if (!post.length) {
+    box.appendChild(el("p", "muted",
+      "Nothing left to deliver. Restart the session clock to rehearse again - " +
+      "it will not un-deliver anything, so delete mailbox\\ for a clean run."));
+    return;
+  }
+  for (const item of post) {
+    const row = el("div", "item");
+    const when = el("span", "chip " + (item.onCue ? "info" : "plain"),
+      item.onCue ? "on cue"
+                 : item.dueIn <= 0 ? "due now" : inWords(item.dueIn));
+    row.appendChild(when);
+    const body = el("div");
+    body.appendChild(el("span", null, item.subject || item.id));
+    body.appendChild(el("div", "mono", item.from || ""));
+    row.appendChild(body);
+    const go = el("button", "btn ghost right", "Deliver now");
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      const { body: got } = await postJSON("/api/mailbox/deliver", { id: item.id });
+      if (got && got.delivered) toast("Delivered: " + got.message.subject);
+      else toast("Nothing was delivered.", true);
+      await loadKeeper();
+      renderPost();
+    });
+    row.appendChild(go);
+    box.appendChild(row);
+  }
+}
+
+/* The live calendar feed, for the presenter. Everything here came from the
+ * server: whether it is configured, when it last succeeded, and what it did
+ * to the day files. */
+function renderCalFeed() {
+  const box = $("calFeed");
+  if (!box) return;
+  const f = ((K.data || {}).calendarFeed) || { state: "cold" };
+  const rows = [];
+
+  if (f.state === "off") {
+    rows.push(["Feed", "not configured"]);
+    rows.push(["How", "set calendar.icsUrl in config.json"]);
+  } else if (f.state === "error") {
+    rows.push(["Feed", "could not be reached"]);
+    rows.push(["Error", f.error || "unknown"]);
+    rows.push(["Showing", "the last copy that worked"]);
+  } else if (f.state === "ok") {
+    rows.push(["Last refresh", f.at ? ago(f.at * 1000) : "-"]);
+    rows.push(["Days", String(f.days)]);
+    rows.push(["Events from Google", String(f.events)]);
+    rows.push(["Kept from agents", String(f.keptFromAgents)]);
+    if (f.removedStale) rows.push(["Swept (moved/deleted)", String(f.removedStale)]);
+    rows.push(["Window", f.window || "-"]);
+    if (f.recurring)
+      rows.push(["Recurring", f.recurring + " kept first instance only"]);
+    if (f.outsideWindow)
+      rows.push(["Outside window", f.outsideWindow + " dropped"]);
+  } else {
+    rows.push(["Feed", "has not run yet"]);
+  }
+  mini("calFeed", rows);
+}
+
 function renderRunTab() {
   const st = S.state;
 
@@ -1582,6 +1655,8 @@ function drawKeeper() {
     : (d.enabled ? "has not run yet" : "not running");
 
   drawKeeperNote(d);
+  renderPost();
+  renderCalFeed();
   if (K.open) drawKeeperBody();
 }
 
@@ -1643,6 +1718,35 @@ function drawKeeperNote(d) {
       "nothing else inside them."
     : "Nothing waiting. The moment an agent writes an invitation or a draft, " +
       "it shows up here."));
+
+  // A calendar that could not be refreshed is showing old data. Say so here
+  // rather than only in the Run tab: the participant reading the Calendar
+  // tab is the one being misled by it.
+  const feed = d.calendarFeed || {};
+  if (feed.state === "error") {
+    n.appendChild(document.createElement("br"));
+    n.appendChild(el("span", null,
+      "The calendar feed could not be reached, so this is the last copy that " +
+      "worked. Anything an agent added since is still here."));
+  }
+
+  // How much post is still coming, and when the next of it lands. The COUNT
+  // and the time, never the subject: those are in the Run tab, which is the
+  // presenter's screen, not the participant's.
+  const post = d.post || [];
+  if (post.length) {
+    const next = post.find((p) => !p.onCue);
+    n.appendChild(document.createElement("br"));
+    n.appendChild(el("span", null,
+      post.length + " more message" + (post.length === 1 ? "" : "s") +
+      " still to arrive" +
+      (next && next.dueIn > 0 ? " - next in " + inWords(next.dueIn) : "") + "."));
+  }
+}
+
+function inWords(secs) {
+  if (secs <= 60) return "under a minute";
+  return Math.round(secs / 60) + " min";
 }
 
 function drawKeeperBody() {
@@ -1710,20 +1814,33 @@ function kitem(item) {
   const detail = item.detail || item.snippet || item.status || "";
   const source = item.source || null;
 
-  const row = el("div", "kitem" + (source ? " fresh" : ""));
+  // "from an agent" and "from your Google calendar" are different claims and
+  // must not look the same. The green bar and the animal face mean an agent
+  // produced this; a feed event gets a plain tag and no face, because there
+  // is no agent behind it and drawing one would say there was.
+  const byAgent = source && source !== FEED_SOURCE;
+
+  const row = el("div", "kitem" + (byAgent ? " fresh" : ""));
   const top = el("div", "top");
   top.appendChild(el("span", "t", title));
   if (when) top.appendChild(el("span", "when", when));
   row.appendChild(top);
   if (detail) row.appendChild(el("div", "d", detail));
-  if (source) {
+  if (byAgent) {
     const tag = el("span", "ktag");
     tag.appendChild(faceNode(source, "idle"));
     tag.appendChild(document.createTextNode("from " + labelOf(source)));
     row.appendChild(tag);
+  } else if (source === FEED_SOURCE) {
+    const tag = el("span", "ktag feed");
+    tag.appendChild(document.createTextNode("Google Calendar"));
+    row.appendChild(tag);
   }
   return row;
 }
+
+/* What icsfeed.py stamps on an event it pulled from the .ics address. */
+const FEED_SOURCE = "calendar";
 
 function labelOf(agentId) {
   const rec = ((S.state || {}).agents || []).find((a) => a.id === agentId);
@@ -1787,6 +1904,32 @@ $("keeperSync").addEventListener("click", async () => {
     b.disabled = false;
     b.textContent = "Check now";
   }, 2200);
+});
+
+$("calRefresh").addEventListener("click", async () => {
+  const b = $("calRefresh");
+  b.disabled = true;
+  b.textContent = "Fetching…";
+  const { body } = await postJSON("/api/calendar/refresh", {});
+  await loadKeeper();
+  await hydrate();
+  b.disabled = false;
+  b.textContent = "Refresh now";
+  if (body && body.state === "ok")
+    toast(body.events + " events from Google, " + body.keptFromAgents +
+          " kept from agents.");
+  else if (body && body.state === "off") toast("No calendar.icsUrl configured.", true);
+  else toast("Could not reach the calendar feed.", true);
+});
+
+$("postReset").addEventListener("click", async () => {
+  const b = $("postReset");
+  b.disabled = true;
+  await postJSON("/api/mailbox/reset-clock", {});
+  await loadKeeper();
+  renderPost();
+  b.disabled = false;
+  toast("Session clock restarted. Timed mail is due from now.");
 });
 
 $("keeperPolicy").addEventListener("click", async () => {

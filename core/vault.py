@@ -119,16 +119,29 @@ def _empty(path):
 
 
 def _load_seed(project_dir):
+    """The built-in seed, with any snapshot file laid over the top of it.
+
+    A MERGE, one persona at a time, rather than a replacement. The snapshot
+    scripts are separate - github-snapshot.py writes the coding key,
+    reddit-snapshot.py writes the pc-assist key - and a presenter is entitled
+    to run one and not the other. Under a straight replacement, pulling real
+    GitHub issues would silently leave the health and finance agents with
+    empty folders and no clue why."""
+    merged = dict(SEED)
     if project_dir:
         try:
             with open(os.path.join(project_dir, SEED_FILE), "r",
                       encoding="utf-8") as f:
                 data = json.load(f)
-            if isinstance(data, dict) and data:
-                return data
+            if isinstance(data, dict):
+                for key, items in data.items():
+                    if key.startswith("_") or not isinstance(items, list):
+                        continue
+                    if items:
+                        merged[key] = items
         except (OSError, ValueError):
             pass
-    return SEED
+    return merged
 
 
 # ---------------------------------------------------------------------------

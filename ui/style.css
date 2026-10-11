@@ -524,6 +524,107 @@ pre.out{margin:0; padding:10px 12px; background:var(--term-bg); color:var(--term
 .themedots i:last-child{margin-right:0}
 
 /* ======================================================================
+   Critter motion
+
+   critters.js emits the art as named layers (.ck-tail, .ck-ears, .ck-lid,
+   .ck-smile, .ck-frond); the timings live here. One critter is on screen at
+   28px in the rail and five are side by side at 46px in the picker, so both
+   of those cases are the brief: alive enough to notice, never enough to read
+   over the top of.
+
+   Every step is a WHOLE pixel and every keyframe is step-end. The art is
+   shape-rendering:crispEdges, so there is no anti-aliasing to hide a half
+   pixel, and holding each frame is what makes it read as sprite animation
+   rather than as a smoothly sliding picture of a sprite.
+   ====================================================================== */
+.ck{
+  /* Per-species phase offset. Five critters in a row blinking together look
+     like one critter printed five times. */
+  --ck-off:0s;
+  --ck-wag:2.7s; --ck-ear:7.3s; --ck-blink:6.4s;
+  --ck-smile:12s; --ck-frond:1.9s;
+}
+.ck-fox    {--ck-off:0s}
+.ck-cat    {--ck-off:-1.1s}
+.ck-owl    {--ck-off:-2.3s}
+.ck-bunny  {--ck-off:-3.7s}
+.ck-axolotl{--ck-off:-5.2s}
+
+/* State is the only dial. Nothing below changes WHAT moves, only how often -
+   so a critter that goes from idle to working is recognisably the same
+   animal having a different morning. */
+.ck-thinking{--ck-wag:4.8s; --ck-ear:3.6s; --ck-blink:8.2s}
+.ck-working {--ck-wag:1.2s; --ck-ear:5s;   --ck-blink:4.6s; --ck-frond:1.2s}
+.ck-alert   {--ck-wag:.8s;  --ck-ear:2.8s; --ck-blink:3.4s; --ck-frond:1.1s}
+.ck-happy   {--ck-wag:.65s; --ck-ear:4.2s; --ck-frond:1.1s}
+.ck-asleep  {--ck-wag:7s;   --ck-frond:3.4s}
+
+.ck-tail {animation:ck-wag   var(--ck-wag)   step-end infinite var(--ck-off)}
+.ck-ears {animation:ck-ear   var(--ck-ear)   step-end infinite var(--ck-off)}
+.ck-lid  {animation:ck-blink var(--ck-blink) step-end infinite var(--ck-off)}
+.ck-frond{animation:ck-frond var(--ck-frond) step-end infinite var(--ck-off)}
+/* Fronds in antiphase, so the gills ripple instead of bouncing as a unit. */
+.ck-frond.r{animation-delay:calc(var(--ck-off) - var(--ck-frond) / 2)}
+/* Owls blink twice, slowly, and look rude doing it. */
+.ck-owl .ck-lid{animation-name:ck-blink2}
+
+/* Drifting into a smile for a second is an IDLE tell - it is what the thing
+   does while nothing is happening. A critter mid-tool-call doing it reads as
+   smug, and the happy face is already smiling. */
+.ck-idle .ck-smile{animation:ck-smile var(--ck-smile) step-end infinite var(--ck-off)}
+
+/* Last, so these beat every rule above them at equal specificity.
+
+   Two of the six states already draw the eyes shut and two already draw them
+   as happy arcs; flashing a lid over either is a frame of nothing, or a frame
+   of wrong. And the axolotl has no ears - what reads as its ear row is the
+   top of its skull, so sinking it by a pixel opens the head. Its tell is the
+   fronds instead. */
+.ck-asleep .ck-lid, .ck-happy .ck-lid{animation:none}
+.ck-axolotl .ck-ears, .ck-asleep .ck-ears{animation:none}
+
+@keyframes ck-wag{
+  0%  {transform:translateX(0)}
+  25% {transform:translateX(1px)}
+  50% {transform:translateX(0)}
+  75% {transform:translateX(-1px)}
+}
+/* Down, never up: row 4 belongs to .ck-base, which paints over the ear as it
+   sinks. Upward, the ear would tear off the skull. */
+@keyframes ck-ear{
+  0%,90%{transform:translateY(0)}
+  91%   {transform:translateY(1px)}
+  93%   {transform:translateY(0)}
+  95%   {transform:translateY(1px)}
+  97%   {transform:translateY(0)}
+}
+@keyframes ck-blink{
+  0%,93%{opacity:0}
+  95%   {opacity:1}
+  97%   {opacity:0}
+}
+@keyframes ck-blink2{
+  0%,88%{opacity:0}
+  90%   {opacity:1}
+  92%   {opacity:0}
+  94%   {opacity:1}
+  96%   {opacity:0}
+}
+@keyframes ck-smile{
+  0%,72%{opacity:0}
+  76%   {opacity:1}
+  88%   {opacity:0}
+}
+@keyframes ck-frond{
+  0% {transform:translateY(0)}
+  50%{transform:translateY(1px)}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .ck *{animation:none !important}
+}
+
+/* ======================================================================
    Critter picker
    ====================================================================== */
 .critterrow{display:flex; gap:9px; flex-wrap:wrap; margin-top:13px}
@@ -538,6 +639,9 @@ pre.out{margin:0; padding:10px 12px; background:var(--term-bg); color:var(--term
    filtered - and so the one you already chose is still where you left it. */
 .critter.taken{opacity:.34; cursor:not-allowed; filter:grayscale(.6)}
 .critter.taken:hover{border-color:var(--border2); background:var(--surface2)}
+/* Held, and greyed out to say so. A face you cannot have should not be the
+   liveliest thing on the screen. */
+.critter.taken .ck *{animation:none}
 .critter .face{width:46px; height:46px; margin:0 auto; display:block}
 .critter .face svg{width:100%; height:100%}
 .critter b{display:block; font-size:11.5px; font-weight:700; margin-top:5px}
@@ -671,6 +775,12 @@ pre.out{margin:0; padding:10px 12px; background:var(--term-bg); color:var(--term
 .ktag .face{width:15px; height:15px; border-radius:5px; overflow:hidden;
   display:grid; place-items:center; background:var(--surface)}
 .ktag .face svg{width:150%; height:150%; margin-top:8%}
+
+/* A feed event has no agent behind it, so the tag is quiet and faceless. */
+.ktag.feed{padding:0 8px; background:transparent; color:var(--faint);
+  border:1px solid var(--border)}
+.ktag.feed::before{content:""; width:5px; height:5px; border-radius:3px;
+  background:var(--faint); opacity:.7}
 
 .kday{font-size:10px; font-weight:800; letter-spacing:.08em; color:var(--faint);
   text-transform:uppercase; margin:13px 0 3px}

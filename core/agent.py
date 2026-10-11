@@ -122,6 +122,25 @@ def _fmt_result(run, tool_name, notes, diagnosis=""):
             % (run.get("reason"), _plain(run.get("detail"))[:400], diagnosis)
         )
 
+    if outcome == "timeout":
+        # Deliberately NOT phrased as a refusal. Nothing was denied here, and
+        # a model told "REFUSED BY POLICY" learns to stop asking - which is
+        # the wrong lesson when the real answer is "that was too much work for
+        # one call". Partial output is included, because a tool that was
+        # stopped half way often produced something usable first.
+        partial = (run.get("stdout") or "").strip()
+        return (
+            "STOPPED ON TIME, NOT REFUSED. The sandbox started and the command "
+            "really ran. It was still running when the time limit expired, so "
+            "MXC stopped it. %s\n"
+            "Nothing was blocked and no grant is missing. Either ask for less "
+            "in one call - a narrower folder, fewer lines - or tell the user to "
+            "raise limits.timeoutMs in the Policy tab.%s"
+            % (run.get("reason") or "",
+               ("\nIt produced this much before it stopped:\n" + partial[:1500])
+               if partial else "")
+        )
+
     if outcome == "refused-to-start":
         return (
             "THE SANDBOX WOULD NOT START. MXC refused to build a container for "

@@ -9,8 +9,10 @@ import time
 
 from . import agents as agents_mod
 from . import basecamp as basecamp_mod
+from . import icsfeed as icsfeed_mod
 from . import mailbox as mailbox_mod
 from . import policy as policy_mod
+from . import postman as postman_mod
 from . import profile as profile_mod
 from . import tools as tools_mod
 from . import vault as vault_mod
@@ -41,7 +43,10 @@ class App:
         self.mailbox = os.path.abspath(os.path.join(
             self.project_dir,
             (self.cfg.get("mail") or {}).get("dir") or "mailbox"))
-        mailbox_mod.ensure(self.mailbox, self.project_dir)
+        # No synthetic calendar when a live .ics address is configured.
+        mailbox_mod.ensure(
+            self.mailbox, self.project_dir,
+            seed_calendar=not icsfeed_mod.settings(self.cfg)["url"])
         self.vault = os.path.abspath(os.path.join(
             self.project_dir,
             (self.cfg.get("vault") or {}).get("dir") or "vault"))
@@ -53,6 +58,10 @@ class App:
         # run before onboarding: connectors() is empty then and the seed falls
         # back to its own defaults.
         vault_mod.ensure(self.vault, self.project_dir, self.connectors())
+
+        # Last known state of the live calendar feed. Filled in by
+        # icsfeed.refresh; "cold" until something asks for it.
+        self.calendar = {"state": "cold"}
 
         # The always-on base agent. Idle until start() decides there is a
         # profile with a base policy to run under.
@@ -138,6 +147,19 @@ class App:
         # files above: somebody re-running setup to change a theme must not
         # lose the invitations their agents have already produced.
         vault_mod.ensure(self.vault, self.project_dir, self.connectors())
+        # Start the session clock here, if nothing has started it yet. Mail
+        # scheduled for "+6m" means six minutes after the room finished
+        # setup, and this is the only moment that knows when that was.
+        #
+        # Establish, not reset: somebody who re-runs setup twenty minutes in
+        # to change a theme must not have the remaining post pushed back by
+        # twenty minutes. Rehearsing the whole session again is what
+        # workshop\deliver.py --reset-clock is for.
+        postman_mod.anchor(self.mailbox, self.profile)
+        # Pull the real calendar now that setup is done. In the background:
+        # the browser is about to navigate to the app, and a captive network
+        # would otherwise hold this request open for the whole socket timeout.
+        icsfeed_mod.refresh_async(self)
         # The base agent may have had no policy a moment ago. Now it does.
         self.basecamp.start()
         return self.profile, written

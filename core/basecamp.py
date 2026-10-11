@@ -36,7 +36,9 @@ import threading
 import time
 
 from . import agents as agents_mod
+from . import icsfeed as icsfeed_mod
 from . import mailbox as mailbox_mod
+from . import postman as postman_mod
 from . import vault as vault_mod
 
 DEFAULT_INTERVAL_SEC = 20
@@ -64,7 +66,8 @@ class Basecamp(object):
             "at": None,
             "merged": 0,       # invites + drafts, this pass
             "total": 0,        # since the app started
-            "unread": 0,       # merged but not yet looked at
+            "unread": 0,       # merged or delivered, not yet looked at
+            "delivered": 0,    # messages the postman brought, this pass
             "refused": [],     # [{source, stage, error}]
             "outcome": None,   # the sandbox run's own outcome
             "reason": None,
@@ -133,6 +136,31 @@ class Basecamp(object):
             self._wake.clear()
 
     def _tick(self):
+        # The post first, and on the HOST. This is the mail server putting
+        # something in the inbox, not the agent reading it - see the header of
+        # postman.py. It is in this thread only because this thread already
+        # wakes up on the right cadence, not because the base agent does it.
+        # The live calendar, on the host. Throttled inside refresh(), so
+        # calling it on every tick costs one comparison most of the time.
+        try:
+            icsfeed_mod.refresh(self.app)
+        except Exception:
+            pass
+
+        delivered = []
+        try:
+            delivered = postman_mod.tick(self.app.mailbox, self.app.profile)
+        except Exception:
+            pass
+        if delivered:
+            with self.lock:
+                self.state["delivered"] = len(delivered)
+                self.state["unread"] += len(delivered)
+                self.state["at"] = time.time()
+        elif self.state.get("delivered"):
+            with self.lock:
+                self.state["delivered"] = 0
+
         fp = self._stamp()
         # Two reasons to re-run, and the second one matters more than it looks.
         #
@@ -147,7 +175,7 @@ class Basecamp(object):
         #      thought to ask again. The policy file's mtime is in the stamp
         #      too, so the retry usually fires on the very next tick.
         clean = self.state["state"] == "ok"
-        if fp == self._fingerprint and clean:
+        if fp == self._fingerprint and clean and not delivered:
             return
         run = self._run_sync()
         self._fingerprint = fp
@@ -227,6 +255,16 @@ class Basecamp(object):
         with self.lock:
             self.state["unread"] = 0
 
+    def note_delivery(self, n):
+        """A message arrived by some route other than the timer - the
+        presenter's cue button. The badge has to move for that too, or the
+        one delivery somebody is actually watching is the one that looks
+        like nothing happened."""
+        with self.lock:
+            self.state["delivered"] = n
+            self.state["unread"] += n
+            self.state["at"] = time.time()
+
     def view(self):
         """The merged global view, plus how it got that way.
 
@@ -243,6 +281,15 @@ class Basecamp(object):
             "enabled": self.enabled(),
             "intervalSec": self.interval(),
             "pending": vault_mod.pending_count(self.app.vault),
+            # The sack, with subjects. This is presenter material: the Run tab
+            # draws it so you can see what lands next and fire it on a cue.
+            # The bubble deliberately shows only the COUNT and the time to the
+            # next one - a participant who reads tomorrow's subject lines off
+            # their own screen has had the surprise spent on them early.
+            "post": postman_mod.pending(self.app.mailbox,
+                                        profile=self.app.profile),
+            "calendarFeed": dict(getattr(self.app, "calendar", None)
+                                 or {"state": "cold"}),
             "calendar": summary.get("calendar") or [],
             "inbox": summary.get("inbox") or [],
             "drafts": summary.get("drafts") or [],

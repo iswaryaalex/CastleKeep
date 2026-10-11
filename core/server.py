@@ -17,8 +17,10 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import agents as agents_mod
+from . import icsfeed as icsfeed_mod
 from . import mailbox as mailbox_mod
 from . import policy as policy_mod
+from . import postman as postman_mod
 from . import profile as profile_mod
 from . import tools as tools_mod
 from . import verify as verify_mod
@@ -255,6 +257,33 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/basecamp/read":
             app.basecamp.mark_read()
             return self._json({"ok": True})
+
+        if path == "/api/mailbox/deliver":
+            # The presenter's cue. Delivers the next scheduled message right
+            # now, whatever its clock said. Host-side, like every other
+            # delivery - see the header of postman.py.
+            msg = postman_mod.deliver_next(app.mailbox, app.profile,
+                                           (self._body() or {}).get("id"))
+            if msg:
+                app.basecamp.note_delivery(1)
+            return self._json({
+                "delivered": bool(msg),
+                "message": {"id": msg.get("id"), "from": msg.get("from"),
+                            "subject": msg.get("subject")} if msg else None,
+                "remaining": len(postman_mod.pending(app.mailbox,
+                                                     profile=app.profile)),
+            })
+
+        if path == "/api/calendar/refresh":
+            # Forced, so the button means "go and look now" rather than
+            # "tell me what you saw ten minutes ago".
+            return self._json(icsfeed_mod.refresh(app, force=True))
+
+        if path == "/api/mailbox/reset-clock":
+            # Rehearse the whole session twice on one machine without
+            # deleting the mailbox.
+            when = postman_mod.reset_anchor(app.mailbox)
+            return self._json({"ok": True, "anchor": when})
 
         if path == "/api/policy":
             agent_id = self._agent_param()

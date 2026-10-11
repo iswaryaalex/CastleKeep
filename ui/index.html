@@ -220,6 +220,37 @@
             <div id="verifySteps" class="steps"></div>
           </div>
 
+          <!-- Presenter material. Mail scheduled to arrive during the
+               session, with what is next and a way to fire it on a cue
+               instead of on a clock. Deliberately NOT in the bubble: a
+               participant who reads tomorrow's subject lines off their own
+               screen has had the surprise spent on them early. -->
+          <div class="card">
+            <div class="card-title">Calendar feed</div>
+            <p class="card-sub">The calendar comes from Google's secret iCal
+               address, which is read-only and needs no credential. The fetch
+               is host-side - a sandboxed process on this tier cannot reach the
+               network at all. What the agent may <em>read</em> is still
+               <code>policies\base.json</code>.</p>
+            <div id="calFeed" class="mini"></div>
+            <div class="row-btns">
+              <button class="btn ghost" id="calRefresh">Refresh now</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Post still to come</div>
+            <p class="card-sub">Mail that arrives during the session. It lands
+               on a timer measured from the moment you finished setup. The
+               delivery is host-side - it is the mail server, not the agent.
+               What the agent is allowed to <em>read</em> is still
+               <code>policies\base.json</code>.</p>
+            <div id="postList" class="feed"></div>
+            <div class="row-btns">
+              <button class="btn ghost" id="postReset">Restart the session clock</button>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-title">Run one tool by hand</div>
             <p class="card-sub">Same path the model uses. Same sandbox, same policy.</p>

@@ -53,6 +53,12 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+# Python puts the SCRIPT's folder on sys.path, not the working directory, so
+# `import core` fails from workshop/ without this even when you run it from
+# the project root.
+sys.path.insert(0, ROOT)
+
+from core import icsfeed                                  # noqa: E402
 OUT = os.path.join(HERE, "mailbox-seed.json")
 
 IMAP_HOST = "imap.gmail.com"
@@ -139,54 +145,27 @@ def _slug(s):
 # ---------------------------------------------------------------------------
 # Calendar
 # ---------------------------------------------------------------------------
+#
+# The parser lives in core/icsfeed.py, not here. The app needs it too - it
+# refreshes the calendar at runtime from the same secret .ics address - and
+# two copies of a timezone converter is two chances to be an hour out.
 
-def fetch_calendar(ics_url):
-    """Google Calendar's secret .ics address, parsed into one record per day.
-
-    A deliberately small parser: VEVENT, DTSTART, DTEND, SUMMARY, LOCATION.
-    Recurrence rules are ignored - a workshop calendar does not need them and
-    a correct RRULE expander is not a thing to hide in a seed script."""
-    with urllib.request.urlopen(ics_url, timeout=30) as r:
-        text = r.read().decode("utf-8", "replace")
-
-    days, cur = {}, None
-    for line in text.replace("\r\n ", "").splitlines():
-        if line.startswith("BEGIN:VEVENT"):
-            cur = {}
-        elif line.startswith("END:VEVENT") and cur is not None:
-            day = cur.get("day")
-            if day:
-                days.setdefault(day, []).append({
-                    "start": cur.get("start", ""), "end": cur.get("end", ""),
-                    "title": cur.get("title", "(untitled)"),
-                    "attendees": [], "location": cur.get("location", ""),
-                })
-            cur = None
-        elif cur is None:
-            continue
-        elif line.startswith("DTSTART"):
-            cur["day"], cur["start"] = _ics_time(line)
-        elif line.startswith("DTEND"):
-            _, cur["end"] = _ics_time(line)
-        elif line.startswith("SUMMARY:"):
-            cur["title"] = line.split(":", 1)[1]
-        elif line.startswith("LOCATION:"):
-            cur["location"] = line.split(":", 1)[1]
-
-    return [{"id": d, "date": d, "events": sorted(evs, key=lambda e: e["start"])}
-            for d, evs in sorted(days.items())]
-
-
-def _ics_time(line):
-    v = line.split(":", 1)[1].strip() if ":" in line else ""
-    m = re.match(r"(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2}))?", v)
-    if not m:
-        return None, ""
-    y, mo, d, hh, mm = m.groups()
-    return "%s-%s-%s" % (y, mo, d), ("%s:%s" % (hh, mm)) if hh else ""
+def fetch_calendar(ics_url, days_back=7, days_ahead=45):
+    return icsfeed.fetch(ics_url, days_back, days_ahead)
 
 
 # ---------------------------------------------------------------------------
+
+def _load_existing():
+    """The previous snapshot, so a half-run does not throw away the other
+    half. Returns {} if there is nothing there yet."""
+    try:
+        with open(OUT, "r", encoding="utf-8") as f:
+            got = json.load(f)
+        return got if isinstance(got, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[2])
@@ -196,41 +175,83 @@ def main():
                     help="how many of the newest messages to take")
     ap.add_argument("--private-folder", default=None,
                     help="an IMAP label to snapshot as the private folder - the "
-                         "one the default triage policy cannot read")
+                         "one the default base agent policy cannot read")
     ap.add_argument("--ics", default=os.environ.get("CK_GMAIL_ICS"),
                     help="Google Calendar secret .ics address (or CK_GMAIL_ICS)")
+    ap.add_argument("--days-back", type=int, default=7,
+                    help="how far back to keep calendar events. Default 7.")
+    ap.add_argument("--days-ahead", type=int, default=45,
+                    help="how far ahead to keep calendar events. Default 45.")
     args = ap.parse_args()
 
     user = os.environ.get("CK_GMAIL_USER")
     pw = os.environ.get("CK_GMAIL_APP_PASSWORD")
-    if not user or not pw:
-        print("Set CK_GMAIL_USER and CK_GMAIL_APP_PASSWORD first.")
-        print("Use the dummy workshop account, never a personal one.")
-        return 2
 
-    print("  Reading %s as %s (read-only)" % (IMAP_HOST, user))
+    # The two halves need different things, so they are allowed to run
+    # separately. The calendar comes from a secret .ics address, which is an
+    # unguessable read-only URL and needs NO credential at all. The mailbox
+    # needs IMAP, which needs an app password.
+    #
+    # Demanding the app password before handing over a calendar that does not
+    # use it is how somebody ends up creating a credential they did not need.
+    if not user or not pw:
+        if not args.ics:
+            print("  Nothing to do.")
+            print("")
+            print("  For the mailbox, set both of these and run again:")
+            print("    set CK_GMAIL_USER=you@gmail.com")
+            print("    set CK_GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxx")
+            print("")
+            print("  For the calendar ALONE, no credential is needed:")
+            print("    python workshop\\mail-snapshot.py --ics <secret .ics address>")
+            print("")
+            print("  Google Calendar -> Settings -> your calendar ->")
+            print("  'Secret address in iCal format'. Treat that URL as a")
+            print("  password: anyone holding it can read the calendar.")
+            print("")
+            return 2
+        print("  No IMAP credentials - taking the calendar only.")
+        user = None
+
+    existing = _load_existing()
     seed = {
         "_readme": "Snapshot of the workshop Gmail account, written by "
                    "workshop/mail-snapshot.py. CastleKeep lays this down into "
                    "mailbox/ on first run. Participants never log in to "
                    "anything; this file is the whole mailbox.",
-        "_account": user,
-        "inbox": fetch_mailbox(user, pw, "INBOX", args.limit),
-        "private": [],
-        "calendar": [],
+        "_account": user or existing.get("_account"),
+        # Keep whatever the last run produced for the half this run is not
+        # doing. A calendar-only run must not wipe the inbox somebody
+        # snapshotted an hour ago.
+        "inbox": existing.get("inbox") or [],
+        "private": existing.get("private") or [],
+        "calendar": existing.get("calendar") or [],
+        "scheduled": existing.get("scheduled") or [],
     }
-    print("  inbox      %d messages" % len(seed["inbox"]))
 
-    if args.private_folder:
-        seed["private"] = fetch_mailbox(user, pw, args.private_folder, 6)
-        for m in seed["private"]:
-            m["labels"] = ["private"]
-        print("  private    %d messages (from %s)"
-              % (len(seed["private"]), args.private_folder))
+    if user:
+        print("  Reading %s as %s (read-only)" % (IMAP_HOST, user))
+        seed["inbox"] = fetch_mailbox(user, pw, "INBOX", args.limit)
+        print("  inbox      %d messages" % len(seed["inbox"]))
+
+        if args.private_folder:
+            seed["private"] = fetch_mailbox(user, pw, args.private_folder, 6)
+            for m in seed["private"]:
+                m["labels"] = ["private"]
+            print("  private    %d messages (from %s)"
+                  % (len(seed["private"]), args.private_folder))
 
     if args.ics:
-        seed["calendar"] = fetch_calendar(args.ics)
-        print("  calendar   %d days" % len(seed["calendar"]))
+        seed["calendar"], cal = fetch_calendar(args.ics, args.days_back,
+                                               args.days_ahead)
+        print("  calendar   %d days  (%s)" % (len(seed["calendar"]), cal["window"]))
+        if cal["outsideWindow"]:
+            print("             %d events outside the window were dropped"
+                  % cal["outsideWindow"])
+        if cal["recurring"]:
+            print("             %d recurring events kept only their FIRST "
+                  "instance - this parser does not expand RRULE"
+                  % cal["recurring"])
 
     if args.dry_run:
         print("\n  --dry-run, nothing written. Would write %s\n" % OUT)
