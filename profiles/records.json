@@ -1,0 +1,77 @@
+{
+  "_superseded": [
+    "Superseded by the four shipped profiles. Kept only so an older link",
+    "still resolves. The app skips it. Safe to delete."
+  ],
+  "superseded": true,
+  "_readme": [
+    "Records is the narrowest agent here: one folder, read only, no network.",
+    "Everything from \"containment\" down is the same schema policy.json uses."
+  ],
+
+  "name": "records",
+  "title": "Records",
+  "critter": "owl",
+  "tagline": "Reads one folder. Cannot change it, cannot send it.",
+  "persona": "You read documents in one folder and answer questions about what is in them. Quote the file you took something from. You cannot write, rename or move anything, and you have no network, so when you are asked to change a file say plainly that you can only read.",
+  "starters": [
+    "What is in the records folder?",
+    "Summarise the intake notes",
+    "Which files mention a follow-up?",
+    "Try to add a line to one of these files"
+  ],
+
+  "boundary": { "files": "one folder", "network": "no network" },
+
+  "description": "Read-only access to a single folder. It can read what is in workspace\\clinic and nothing else, cannot write anywhere at all, and has no network.",
+  "containment": "processcontainer",
+
+  "paths": {
+    "_note": "One grant beyond System32, and it is a leaf folder rather than a parent. Resist widening it to ${workspace}: a broad grant does not announce itself, it just quietly makes every refusal you were counting on stop happening. The clinic folder is synthetic sample data written for this workshop.",
+    "read": [
+      "${windir}\\System32",
+      "${workspace}\\clinic",
+      "${project}\\agent-events\\records"
+    ],
+    "write": [
+      "${project}\\agent-events\\records"
+    ],
+    "deny": []
+  },
+
+  "network": {
+    "_note": "Documents in, nothing out. An agent that can read records and reach the internet is the shape of the problem, not the demo.",
+    "outbound": "deny",
+    "localNetwork": false
+  },
+
+  "ui": {
+    "allowWindows": false,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+
+  "limits": {
+    "timeoutMs": 30000
+  },
+
+  "advanced": {
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+
+  "tools": {
+    "_note": "Identical in all four profiles on purpose. write_file is left switched on so that asking Records to edit a file produces a real refusal from the container instead of a host-side 'that tool is off'.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}

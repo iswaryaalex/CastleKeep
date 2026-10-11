@@ -1,16 +1,30 @@
-# What policy.json becomes
+# What a policy becomes
 
-`policy.json` is not the file MXC reads. CastleKeep compiles it into an
+A policy file is not the file MXC reads. CastleKeep compiles it into an
 `MXCConfiguration` document and hands that to `wxc-exec.exe` as base64 on the
 command line, one fresh document per tool call. This page is the mapping.
 
+There are five policy files in a stock install and they all compile through
+this same page. Four of them are the agents' own, one per file in `profiles\`,
+and those are what every tool call uses. The fifth is `policy.json` in the
+root. No agent uses it. It is the host-wide default that the Run tab's dry
+run, the dialect negotiation at startup and `verify.py` compile when the claim
+being made is about the machine rather than about an agent.
+
+An agent's profile carries a few keys this page does not list, for its name,
+its creature, its tagline and its starter questions. The compiler reads only
+the sections below and leaves the rest alone, which is why a profile can be a
+policy without being a different kind of file.
+
 You never have to trust this page. The Policy tab has a button marked **Show
 the JSON that MXC actually receives**, and the Run tab prints the exact
-document that was sent alongside whatever the sandbox did with it.
+document that was sent alongside whatever the sandbox did with it. Both follow
+the agent picker, so what you are shown is the document that agent's next call
+will send.
 
 ## The mapping
 
-| policy.json | MXCConfiguration | Notes |
+| policy field | MXCConfiguration | Notes |
 |---|---|---|
 | `containment` | `containment` | `processcontainer` is the only value worth setting here. |
 | `paths.read` | `filesystem.readonlyPaths` | Variables expanded first. A path also listed under `write` is dropped from this list rather than sent twice. |
@@ -26,9 +40,9 @@ document that was sent alongside whatever the sandbox did with it.
 | `advanced.leastPrivilege` | `processContainer.leastPrivilege` | |
 | `advanced.captureDenials` | `processContainer.captureDenials` | Needs a capture directory and native learning-mode support. |
 | `advanced.allowDaclMutation` | `fallback.allowDaclMutation` | Permission to rewrite real ACEs on disk when the run lands on the DACL fallback. |
-| `tools.*` | *nothing* | Host-side gate. A tool switched off here never reaches `wxc-exec` at all. |
+| `tools.*` | *nothing* | Host-side gate. A tool switched off here never reaches `wxc-exec` at all, so MXC never gets to refuse it. The four shipped profiles set this block identically on purpose: it is what makes the difference between the agents a containment result rather than an `if` statement. |
 
-Two fields in the wire document have no policy.json source. `version` carries
+Two fields in the wire document have no source in the policy. `version` carries
 the schema version, and `lifecycle.destroyOnExit` is always `true`. There is
 no setting to make a CastleKeep sandbox outlive its one command, on purpose.
 
@@ -63,8 +77,8 @@ legacy (`defaultPolicy`/`allowLocalNetwork`).
 
 If both are rejected, the dialect is `none` and **the run carries no network
 policy at all**. CastleKeep says so loudly, in red, and the Control Panel
-reports outbound as "not enforced on this host" rather than repeating what
-policy.json asked for. A policy that asked for deny and got dropped is the
+reports outbound as "not enforced on this host" rather than repeating what the
+policy asked for. A policy that asked for deny and got dropped is the
 single most dangerous state this app can be in, so it is the one state that
 refuses to be quiet about itself.
 

@@ -3,19 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CastleKeep</title>
+<title>Keeper</title>
 <link rel="stylesheet" href="/tokens.css">
 <link rel="stylesheet" href="/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
+<!-- Favicon: isometric cube mark in brand teal -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%234A9D8A'/><polygon points='16,5 27,11 27,21 16,27 5,21 5,11' fill='%233A8070'/><polygon points='16,5 27,11 16,17 5,11' fill='%2363C4AE'/><polygon points='5,11 16,17 16,27 5,21' fill='%234A9D8A'/><polygon points='27,11 16,17 16,27 27,21' fill='%23277A6A'/></svg>">
 </head>
 <body>
 
 <header class="titlebar">
   <a class="brand" href="/" title="Back to the launch screen"
      style="text-decoration:none; color:inherit">
-    <span class="avatar" id="brandDragon"></span>
-    <span class="brand-name">CastleKeep</span>
-    <span class="brand-sub" data-who>local assistant</span>
+    <!-- Isometric cube mark -->
+    <svg class="brand-cube" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <!-- top face -->
+      <polygon points="14,4 25,10 14,16 3,10" fill="#63C4AE"/>
+      <!-- left face -->
+      <polygon points="3,10 14,16 14,24 3,18" fill="#4A9D8A"/>
+      <!-- right face -->
+      <polygon points="25,10 14,16 14,24 25,18" fill="#277A6A"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-name">Keeper</span>
+      <span class="brand-sub">four agents, one machine</span>
+    </div>
+    <span id="brandDragon" style="display:none"></span>
   </a>
   <div class="titlebar-right">
     <span class="chip" id="tierChip" title="Reported by wxc-exec --probe on this machine">checking the host&hellip;</span>
@@ -29,14 +41,32 @@
 
   <nav class="rail">
     <div class="rail-label">Workspace</div>
-    <div class="rail-chip" id="hostChip">&hellip;</div>
-    <button class="nav" data-tab="assistant"><i data-ic="chat"></i><span data-who>Assistant</span></button>
+    <div class="rail-chip" id="hostChip" title=""><span id="hostPath">&hellip;</span></div>
+
+    <div class="rail-label">Your Work</div>
+    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Agents</button>
+    <!-- Agent Missions: collapsible disclosure. Collapsed by default; a live
+         dot appears on the toggle itself when any agent's sandbox is running. -->
+    <details class="rail-missions-wrap" id="agentMissionsDetails">
+      <summary class="nav rail-missions-toggle">
+        <i data-ic="tasks"></i><span class="rm-label">Agent Missions</span>
+        <span class="livedot rm-global-dot" id="rmGlobalDot" hidden></span>
+        <span class="rm-chevron">›</span>
+      </summary>
+      <div class="rail-missions-body" id="railMissions"></div>
+    </details>
+    <button class="nav nav-placeholder" disabled title="Coming soon">
+      <i data-ic="calendar"></i>Calendar &amp; Inbox
+    </button>
+
+    <div class="rail-label">This Machine</div>
     <button class="nav" data-tab="control"><i data-ic="panel"></i>Control Panel</button>
-    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Policy</button>
+    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Sandbox</button>
     <button class="nav" data-tab="run"><i data-ic="terminal"></i>Run</button>
-    <button class="nav" data-tab="settings"><i data-ic="gear"></i>Settings</button>
+    <button class="nav" data-tab="settings"><i data-ic="sliders"></i>Settings</button>
+
     <div class="rail-foot">
-      <div class="rail-label">This turn</div>
+      <div class="rail-label" id="footLabel">This conversation</div>
       <div class="rail-stat"><span id="statCalls">0</span><em>sandboxes spawned</em></div>
       <div class="rail-stat"><span id="statRefused" class="deny">0</span><em>refused</em></div>
     </div>
@@ -44,52 +74,75 @@
 
   <!-- ============================ ASSISTANT ============================ -->
   <main class="tab" id="tab-assistant">
+    <!-- Filled from /api/state. The four agents are discovered in profiles\,
+         not listed here, so a fifth profile dropped in that folder shows up
+         without anybody editing HTML. -->
+    <div class="agentbar" id="agents"></div>
+    <div class="agentnotes hidden" id="agentNotes"></div>
     <div class="split">
       <section class="pane chat-pane">
         <div class="pane-head">
-          <span class="avatar sm" id="chatDragon"></span>
+          <span class="sprite" id="chatSprite"></span>
           <div>
-            <h1 data-who>Assistant</h1>
-            <p class="sub">Runs on this machine. Nothing you type leaves it.</p>
+            <h1 id="headName">&hellip;</h1>
+            <p class="sub" id="headSub"></p>
           </div>
-          <button class="btn ghost right" id="clearChat">New conversation</button>
+          <span class="tag right" id="headTag"></span>
+          <button class="btn ghost" id="clearChat">New conversation</button>
         </div>
-        <div class="transcript" id="transcript">
-          <div class="empty">
-            <span class="avatar lg" id="emptyDragon"></span>
-            <h2>Ask about this device.</h2>
-            <p><span data-who>Assistant</span> can look around inside a sandbox you control. Every tool call
-               runs in a throwaway container built from <code>policy.json</code>
-               as it is at that instant.</p>
-            <div class="starters">
-              <button class="starter">Give this machine a quick check-up.</button>
-              <button class="starter">How much disk space is left, and what is eating it?</button>
-              <button class="starter">Try to read a file you are not allowed to read, so I can see what happens.</button>
-              <button class="starter">Can you reach the internet from inside the sandbox?</button>
-            </div>
-          </div>
-        </div>
+        <div class="transcript" id="transcript"></div>
         <form class="composer" id="composer">
-          <textarea id="input" rows="1" data-who-placeholder
-            placeholder="Ask Assistant something about this device&hellip;"></textarea>
+          <textarea id="input" rows="1" placeholder="Ask something&hellip;"></textarea>
           <button class="btn primary" id="send" type="submit">Send</button>
           <button class="btn danger hidden" id="stop" type="button">Stop</button>
         </form>
       </section>
 
-      <aside class="pane side">
-        <div class="pane-head"><h1>Mission</h1></div>
-        <div class="scroll" id="missionScroll">
-          <div class="card">
-            <div class="card-title">In force right now</div>
-            <div id="missionPolicy" class="mini"></div>
-            <button class="btn ghost full" data-goto="policy">Change the policy</button>
+      <!-- ==================== SANDBOX PANEL (right, collapsible) ==================== -->
+      <aside class="pane side" id="sandboxPane">
+        <div class="pane-head">
+          <h1>Sandbox</h1>
+          <button class="paneflip right" data-fold="sandboxPane" aria-expanded="true"
+                  title="Collapse the Sandbox panel">&rsaquo;</button>
+        </div>
+        <!-- Live bar: only visible while a sandbox is running -->
+        <div class="live" id="liveBar" hidden></div>
+        <div class="scroll" id="sandboxScroll">
+          <!-- Status header: badge + label -->
+          <div class="sb-header">
+            <span class="sb-title">Active agent</span>
+            <span class="sandbox-on-badge" id="sandboxOnBadge">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.4l7.1 2.8v5.4c0 4.3-2.9 7.6-7.1 9.2-4.2-1.6-7.1-4.9-7.1-9.2V6.2z"/><path d="M9.2 12.1l2 2 3.6-3.8"/></svg>
+              ON
+            </span>
           </div>
-          <div class="card">
+          <!-- Policy rows: clean key · value list, no borders or boxes -->
+          <div class="sb-section">
+            <div class="sb-rows" id="sandboxGrid"></div>
+            <button class="btn ghost full sb-policy-btn" data-goto="policy">Edit policy &rarr;</button>
+          </div>
+          <!-- Activity log -->
+          <div class="sb-section">
             <div class="card-title">Sandbox activity</div>
             <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
           </div>
+          <!-- In-force summary + edit button -->
+          <div class="sb-section">
+            <div class="card-title">In force right now</div>
+            <div id="missionPolicy" class="mini"></div>
+            <button class="btn ghost full" id="editThisPolicy">Change this agent&rsquo;s policy</button>
+          </div>
+          <!-- All-four comparison -->
+          <div class="sb-section">
+            <div class="card-title">All four agents</div>
+            <p class="card-sub">Same model, same loop, same tools &mdash; only the sandbox boundary differs.</p>
+            <div class="grid4" id="grid4"></div>
+          </div>
         </div>
+        <button class="foldtab" data-fold="sandboxPane" title="Show the Sandbox panel">
+          <span class="livedot" id="foldDot" hidden></span>
+          <span class="vtext">Sandbox</span>
+        </button>
       </aside>
     </div>
   </main>
@@ -98,7 +151,7 @@
   <main class="tab" id="tab-control">
     <div class="scroll pad">
       <h1 class="page">Control Panel</h1>
-      <p class="page-sub">Everything CastleKeep knows about this machine, and
+      <p class="page-sub">Everything Keeper knows about this machine, and
          everything it has done since it started.</p>
 
       <div class="tiles" id="tiles"></div>
@@ -115,7 +168,7 @@
       <div class="card">
         <div class="card-title">Every sandbox run</div>
         <table class="runs" id="runsTable">
-          <thead><tr><th>#</th><th>Tool</th><th>Outcome</th><th>Took</th><th>Command</th></tr></thead>
+          <thead><tr><th>#</th><th>Agent</th><th>Tool</th><th>Outcome</th><th>Took</th><th>Command</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -145,25 +198,34 @@
         <div class="pane-head">
           <div>
             <h1>Policy</h1>
-            <p class="sub">Fixed the moment a sandbox starts. An edit here
-               reaches the next tool call, never one already running.</p>
+            <p class="sub" id="policySub">Fixed the moment a sandbox starts. An
+               edit here reaches the next tool call, never one already running.</p>
           </div>
           <div class="right">
+            <!-- Whose policy. Each agent brings its own out of profiles\, and
+                 policy.json is the host-wide default that no agent uses. -->
+            <select id="policyWho" title="Which policy you are editing"></select>
             <button class="btn ghost" id="revertPolicy">Revert</button>
             <button class="btn primary" id="savePolicy">Save</button>
           </div>
         </div>
         <div class="scroll pad" id="policyForm"></div>
       </section>
-      <aside class="pane side">
+      <aside class="pane side" id="wirePane">
         <div class="pane-head">
           <h1>What MXC receives</h1>
           <button class="btn ghost right" id="dryRun">Dry-run it</button>
+          <button class="paneflip" data-fold="wirePane" aria-expanded="true"
+                  title="Collapse this panel">&rsaquo;</button>
         </div>
         <div class="scroll">
           <div id="lintBox"></div>
           <pre class="json" id="policyJson"></pre>
         </div>
+        <button class="foldtab" data-fold="wirePane"
+                title="Show what MXC receives">
+          <span class="vtext">What MXC receives</span>
+        </button>
       </aside>
     </div>
   </main>
@@ -186,8 +248,11 @@
 
           <div class="card">
             <div class="card-title">Run one tool by hand</div>
-            <p class="card-sub">Same path the model uses. Same sandbox, same policy.</p>
+            <p class="card-sub">Same path the model uses. Pick an agent and the
+               tool runs under that agent's policy, in the same one-shot sandbox
+               its own tool calls get.</p>
             <div class="toolrunner">
+              <select id="toolWho" title="Whose sandbox to run it in"></select>
               <select id="toolPick"></select>
               <div id="toolArgs" class="toolargs"></div>
               <button class="btn coral" id="toolGo">Run it in a sandbox</button>
@@ -200,12 +265,17 @@
           </div>
         </div>
       </section>
-      <aside class="pane side term-pane">
+      <aside class="pane side term-pane" id="termPane">
         <div class="pane-head">
           <h1>Terminal</h1>
           <button class="btn ghost right" id="clearTerm">Clear</button>
+          <button class="paneflip" data-fold="termPane" aria-expanded="true"
+                  title="Collapse the terminal">&rsaquo;</button>
         </div>
         <pre class="term" id="term"></pre>
+        <button class="foldtab" data-fold="termPane" title="Show the terminal">
+          <span class="vtext">Terminal</span>
+        </button>
       </aside>
     </div>
   </main>

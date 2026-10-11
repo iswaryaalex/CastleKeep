@@ -1,43 +1,82 @@
-/* CastleKeep - the palette, on its own.
-   Split out of style.css so the launch screen can share it without also
-   inheriting the app shell's layout rules. The two documents look alike and
-   have almost nothing else in common: the app is a fixed rail-and-pane shell,
-   the launch screen is one centred card. Borrowing the whole stylesheet for
-   the sake of the colours is what led to a .chip on the launch page quietly
-   growing the status-dot pseudo-element meant for the app.
+/* CastleKeep — design tokens derived from reference design.
+   Inter via Google Fonts. Everything else self-hosted. */
 
-   One light warm shade carries everything. The brand yellow appears in small
-   doses only: a selected tab, a mascot tile, the favicon. Saturated yellow
-   across large areas reads as a toy, and this app is making an argument people
-   have to believe. Green stays reserved for "this worked", so --primary never
-   doubles as both brand and allowed. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@font-face{
+  font-family:"Cascadia Mono";
+  src:url("fonts/CascadiaMono.woff2") format("woff2");
+  font-weight:400 700; font-style:normal; font-display:swap;
+}
 
 :root{
   color-scheme: light;
-  --bg:#FAF8F1; --surface:#FFFFFF; --surface2:#FCFBF6; --surface3:#F2EFE5;
-  --border:#E7E2D4; --border2:#D4CEBD;
-  /* One step lighter than --border, for rules inside a card where the full
-     border weight would chop the surface into boxes. */
-  --hair:#F2EEE2;
-  --ink:#23201A; --ink2:#484337; --muted:#7A7466; --faint:#A9A391;
-  /* brand - used sparingly. --brand itself is for 1-3px accents only. */
-  --brand:#F5CE3E; --brand-dark:#D9B421; --brand-soft:#FBF3D7;
-  --brand-line:#EADFB4; --brand-ink:#5C4B00;
-  /* primary - "this worked". lemonade-server's own --tertiary green. */
-  --primary:#3C6531; --primary-dark:#2B4A23; --primary-soft:#E9F1E3; --primary-line:#C4D8B9;
-  --coral:#E8795A; --coral-soft:#FDEDE7; --coral-line:#F5C9BA;
-  --deny:#BE3A2B; --deny-soft:#FBE9E5; --deny-line:#F0C3BB;
-  --warn:#A1560A; --warn-soft:#FBEBD8; --warn-line:#EFD0AC;
-  --info:#2F6FA8; --info-soft:#E9F1F8; --info-line:#C3D9EC;
-  --term-bg:#1A1813; --term-bg2:#24211A; --term-fg:#F2EFE5; --term-dim:#8C856F;
-  --term-green:#A8D183; --term-coral:#F08E6E; --term-gold:#FCD846; --term-blue:#8FBCE8;
-  --sans:"Segoe UI Variable Text","Segoe UI",Lato,system-ui,sans-serif;
+
+  /* ---- Backgrounds ---- */
+  /* Page bg: warm cream. Rail/sidebars: one step lighter cream.
+     Cards and panes: true white — this contrast is what makes the
+     policy/sandbox tab readable instead of a sea of the same colour. */
+  --bg:#EDE8DE;
+  --surface:#FFFFFF;
+  --surface2:#F5F1EA;
+  --surface3:#EDE8DE;
+
+  /* ---- Borders ---- */
+  --border:#E8E3D8;
+  --border2:#D6D0C4;
+  --hair:#EDE9DF;
+
+  /* ---- Text ---- */
+  --ink:#1A1714;
+  --ink2:#3D3A35;
+  --muted:#7A756E;
+  --faint:#9E9A92;
+
+  /* ---- Brand / accent: muted teal-green ---- */
+  --brand:#4A9D8A;
+  --brand-dark:#3A8070;
+  --brand-soft:#E8F3F0;
+  --brand-line:#BFE0D8;
+  --brand-ink:#1F5E52;
+
+  /* ---- Semantic: green = allowed / enforced ---- */
+  --primary:#2D8A6B;
+  --primary-dark:#1F6B52;
+  --primary-soft:#E8F3EF;
+  --primary-line:#A8D9C8;
+
+  /* ---- Coral / warning / deny ---- */
+  --coral:#C4523A;
+  --coral-soft:#FEE9E7;
+  --coral-line:#F5C4BC;
+  --deny:#C0392B;
+  --deny-soft:#FEE9E7;
+  --deny-line:#F5C4BC;
+  --warn:#B8860B;
+  --warn-soft:#FBF3E0;
+  --warn-line:#F0D898;
+  --info:#2563EB;
+  --info-soft:#EFF6FF;
+  --info-line:#BFDBFE;
+
+  /* ---- Terminal (unchanged dark theme) ---- */
+  --term-bg:#0D1117;
+  --term-bg2:#161B22;
+  --term-fg:#E6EDF3;
+  --term-dim:#6E7681;
+  --term-green:#3FB950;
+  --term-coral:#F85149;
+  --term-gold:#E3B341;
+  --term-blue:#79C0FF;
+
+  /* ---- Typography ---- */
+  --sans:Inter,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
   --mono:"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
-  /* Titles and the main text blocks on the launch screen only. Every small
-     control stays on --sans, where Garamond's low x-height would cost
-     legibility for nothing. Falls through to a system Garamond and then to
-     Georgia when the woff2 files in ui/fonts/ are not there. */
-  --serif:"EB Garamond",Garamond,"Adobe Garamond Pro","Palatino Linotype",Palatino,Georgia,serif;
-  --rail:232px; --titlebar:46px;
-  --shadow:0 1px 2px rgba(60,48,0,.05), 0 6px 18px rgba(60,48,0,.05);
+  --serif:var(--sans);
+
+  /* ---- Layout ---- */
+  --rail:216px;
+  --titlebar:56px;
+  --shadow:0 1px 3px rgba(26,23,20,.06), 0 4px 16px rgba(26,23,20,.07);
+  --shadow-sm:0 1px 2px rgba(26,23,20,.05);
 }

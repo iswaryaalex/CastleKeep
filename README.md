@@ -1,17 +1,45 @@
 # CastleKeep
 
-A local AI assistant that can only do what you let it.
+Four local AI agents on one machine, each able to do only what you let it.
 
 Everything runs on your machine. The model runs on your machine. The agent
-loop runs on your machine. And every single thing the agent tries to *do* runs
+loop runs on your machine. And every single thing an agent tries to *do* runs
 inside a throwaway Microsoft MXC sandbox built from a policy file you can edit
 while the app is running.
 
-The point of the exercise is the refusals. You will ask Assistant to read something
-it should not be able to read, and watch the sandbox stop it. Then you will
-change one line of policy, ask again, and watch it work. Nothing in this app
-simulates that. If the screen says a sandbox refused something, a sandbox
-refused something.
+The point of the exercise is the refusals. You will ask an agent to read
+something it should not be able to read, and watch the sandbox stop it. Then
+you will change one line of policy, ask again, and watch it work. Nothing in
+this app simulates that. If the screen says a sandbox refused something, a
+sandbox refused something.
+
+## The four agents
+
+They share one model, one agent loop and the same nine tools. The only thing
+that differs between them is the box their tool calls run inside, which is why
+the differences you see are a containment result and not an `if` statement.
+
+The dragon checks the device. It reads no files of yours at all and has no
+network. It is the only one the launch wizard names, so it answers to whatever
+you typed there; the other three go by their job titles.
+
+Finance looks up rates and prices. It is the only agent that may reach the
+network, and it is also the only one with nothing of yours to send.
+
+Health reads a folder of clinic notes and cannot write a byte or reach the
+network. The notes in `workspace\clinic` are invented for this workshop. Do
+not repoint it at real medical records to make the demo better.
+
+Paperwork files and renames things. It may write, inside one folder, and has
+no network.
+
+Read those last two paragraphs against each other. The agent that can talk to
+the internet is the one holding nothing worth sending, and the agent holding
+your files cannot talk.
+
+Each agent keeps its own conversation. Switching agents in the bar swaps the
+whole transcript rather than carrying one across, so a model is never handed a
+stretch of conversation produced under a boundary that was not its own.
 
 Windows only. Python 3.9 or newer. No pip install. It is stdlib on purpose,
 so it survives conference wifi and a locked-down laptop.
@@ -113,36 +141,60 @@ Point a demo at a real credential exactly once and you will understand why.
 
 ## The five tabs
 
-**Assistant** is the chat tab. Ask it what kind of machine this is, how
+**Agents** is the chat tab, with all four along the top and a separate
+conversation behind each. Ask the dragon what kind of machine this is, how
 much disk is free, what is eating memory. Each answer involves a real tool
 call, and each tool call spawns a real sandbox, and you can watch them arrive
-inline, with the command and the exact configuration that was sent.
+inline, with the command and the exact configuration that was sent. The panel
+on the right shows the boundary the agent on screen is working inside, and
+underneath it the same four lines for all of them, so you can see what moved.
 
 **Control Panel** is the honest view: the tier this host actually gave you,
 which knobs it can enforce, every tool and what it needs, and a running list of
 everything that has been refused and by whom.
 
-**Policy** is the file. Edit paths, flip network off, switch tools on and off.
-Knobs this host cannot enforce are disabled with the reason attached, rather
-than silently doing nothing. Save, and the change lands on the agent's very
-next tool call. No restart, no reload. Each call re-reads the file from disk
-and compiles a fresh sandbox configuration from it.
+**Policy** is the file, and the picker at the top says whose. Edit paths, flip
+network off, switch tools on and off. Knobs this host cannot enforce are
+disabled with the reason attached, rather than silently doing nothing. Save,
+and the change lands on that agent's very next tool call and on no other
+agent's. No restart, no reload. Each call re-reads the file from disk and
+compiles a fresh sandbox configuration from it.
 
-**Run** is the terminal view, if you would rather watch it that way.
+**Run** is the terminal view, if you would rather watch it that way. The
+hand-run picks an agent too, so a tool you run yourself goes into the same
+one-shot sandbox that agent's own tool calls get.
 
 **Settings** is the model and the executor.
 
-You can also just edit `policy.json` in a text editor. It is the same file, and
-it is commented. `COMPILED.md` explains what each field becomes on the wire.
+## Where the policies live
+
+Each agent brings its own, as one file in `profiles\`. The filename is the
+agent's id, so the dragon is `profiles\diagnostics.json`. A profile is a
+policy with a few extra keys on top for the name, the creature and the
+starter questions, and the sandbox compiler ignores the keys it does not
+know. Drop a fifth file in that folder and you get a fifth agent without
+touching any Python.
+
+`policy.json` in the root is the host-wide default, and no agent uses it. It
+is what the Run tab's dry run, the network dialect negotiation at startup and
+`verify.py` compile, because those make a claim about the machine rather than
+about an agent and must not borrow one agent's boundary to do it.
+
+You can edit any of them in a text editor instead of the Policy tab. They are
+the same files, and they are commented. `COMPILED.md` explains what each field
+becomes on the wire, and `profiles\_readme.md` explains the extra keys.
 
 ## Three ways to be told no
 
 They look different on screen on purpose, because they mean very different
 things.
 
-**Stopped on the host** (blue) means a tool is switched off in `policy.json`.
-The request never reached a sandbox. This is the weakest kind of control,
-the agent's own harness declining, and it is marked that way.
+**Stopped on the host** (blue) means a tool is switched off in the agent's
+profile. The request never reached a sandbox. This is the weakest kind of
+control, the agent's own harness declining, and it is marked that way. All
+four profiles ship with the same tools switched on, deliberately, so that
+what any one agent cannot do is something MXC refused rather than something
+the harness never attempted.
 
 **Blocked by policy** (red) means the sandbox started, the command ran, and
 MXC refused the access. This is the real thing.
@@ -151,8 +203,9 @@ MXC refused the access. This is the real thing.
 rejected. Usually you asked for something this backend does not implement.
 The refusal names the offending field.
 
-Assistant is told the difference too, in plain language, along with an instruction
-not to go looking for a way around it.
+Each agent is told the difference too, in plain language, along with an
+instruction not to go looking for a way around it and the names of the other
+three, so that "Paperwork can do that, ask it" is an answer it can give.
 
 ## What this does not do
 

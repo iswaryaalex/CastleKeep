@@ -1,0 +1,76 @@
+{
+  "_readme": [
+    "A profile is a policy.json with a few extra fields on top: who the agent is,",
+    "what it looks like, and what to say about it. Everything from \"containment\"",
+    "down is the same schema policy.json uses and compiles the same way.",
+    "",
+    "Edit and save. The next tool call this agent makes runs under the new rules."
+  ],
+  "name": "diagnostics",
+  "title": "System",
+  "critter": "dragon",
+  "_named": [
+    "The launch wizard asks for one name and this is the agent that gets it.",
+    "The dragon answers to whatever was typed there; the other three go by",
+    "their job titles. Move this key to another profile and the name moves",
+    "with it. Two profiles claiming it is an error."
+  ],
+  "named": true,
+  "task": "Device health & status",
+  "tagline": "Checks the device. Reads no files, sends nothing.",
+  "persona": "You look after this machine. Lead with measurements: version numbers, free space in GB, memory in MB. You cannot read the person's documents and you have no network, so if a question needs either, say which one you are missing rather than guessing from what you can see. If you spot something time-sensitive — a driver expiry, a certificate date — offer to add it to the calendar. If they say yes, write a YYYY-MM-DD-slug.json event file to your events folder using this schema: {\"id\":\"diagnostics-<slug>\",\"agent\":\"diagnostics\",\"title\":\"...\",\"detail\":\"...\",\"due\":\"YYYY-MM-DD\",\"urgency\":\"low|medium|high|critical\",\"created\":\"<ISO now>\",\"source\":\"<tool used>\"}.",
+  "starters": [
+    "How is this machine doing?",
+    "What is using the most memory right now?",
+    "How much disk space is left?",
+    "Try to read a file in my Documents folder"
+  ],
+  "boundary": {
+    "files": "no files",
+    "network": "no network"
+  },
+  "description": "Read-only device check-up. It can ask Windows about itself and report what it finds. It cannot read or change a single file of yours, and it has no network at all.",
+  "containment": "processcontainer",
+  "paths": {
+    "_note": "${windir}\\System32 is where cmd.exe and powershell.exe themselves live. Take it away and the sandbox cannot start the tool at all. Apart from that this list is empty, which is the point: device facts come from Windows answering questions about itself, not from reading your folders. It has no write list either, because nothing it does needs one.",
+    "read": [
+      "${windir}\\System32",
+      "${project}\\agent-events\\diagnostics"
+    ],
+    "write": [
+      "${project}\\agent-events\\diagnostics"
+    ],
+    "deny": []
+  },
+  "network": {
+    "_note": "outbound: 'deny' | 'allow'. Per-host rules are not supported on Windows by this binary, so it is all or nothing. The model itself runs on the host and never crosses this boundary.",
+    "outbound": "deny",
+    "localNetwork": false
+  },
+  "ui": {
+    "allowWindows": true,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+  "limits": {
+    "timeoutMs": 30000
+  },
+  "advanced": {
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+  "tools": {
+    "_note": "Identical in all four profiles on purpose. This gate is host-side: a tool switched off here never reaches a sandbox, so MXC never gets to refuse it. Leaving it open is what makes the difference between the four agents a real containment result rather than an if statement.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}

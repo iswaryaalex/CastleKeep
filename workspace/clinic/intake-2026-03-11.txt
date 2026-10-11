@@ -1,0 +1,15 @@
+NORTHWIND FAMILY PRACTICE - INTAKE NOTE (SAMPLE)
+Record: NW-00412      Visit: 2026-03-11      Clinician: R. Okonjo
+
+Patient: Marla Brandt, 41
+Reason for visit: persistent cough, four weeks.
+
+Observations
+  Temperature 37.1 C. Resting pulse 78. Oxygen saturation 97 percent.
+  Chest clear on auscultation. No wheeze.
+
+Plan
+  Trial of inhaled steroid for two weeks.
+  Follow-up booked 2026-03-25.
+
+This is invented data. See README.txt.

@@ -105,7 +105,7 @@ body{overflow:auto}
 
   <nav class="rail">
     <div class="rail-label">Lab folder</div>
-    <div class="rail-chip">C:\CastleKeepLab</div>
+    <div class="rail-chip"><span>C:\CastleKeepLab</span></div>
     <button class="nav" data-go="s1">1 &nbsp;Build the lab</button>
     <button class="nav" data-go="s2">2 &nbsp;Probe the host</button>
     <button class="nav" data-go="s3">3 &nbsp;Validate, don't run</button>
@@ -116,7 +116,7 @@ body{overflow:auto}
     <button class="nav" data-go="s8">+ &nbsp;Network</button>
     <div class="rail-foot">
       <div class="rail-label">Binary in use</div>
-      <div class="rail-chip" id="exeChip" style="white-space:normal; line-height:1.4">looking&hellip;</div>
+      <div class="rail-chip" id="exeChip" style="white-space:normal; line-height:1.4"><span>looking&hellip;</span></div>
     </div>
   </nav>
 
@@ -465,7 +465,8 @@ fetch("/api/state")
   .then((st) => {
     const exe = st.mxcExe;
     setExe(exe || PLACEHOLDER);
-    $("exeChip").textContent = exe || "not found on this host";
+    $("exeChip").firstElementChild.textContent =
+      exe || "not found on this host";
 
     const tier = (st.capabilities || {})._tierLabel;
     const chip = $("tierChip");
@@ -487,7 +488,7 @@ fetch("/api/state")
   })
   .catch(() => {
     setExe(PLACEHOLDER);
-    $("exeChip").textContent = "app not running";
+    $("exeChip").firstElementChild.textContent = "app not running";
     $("tierChip").textContent = "app not running";
     $("tierChip").className = "chip bad";
     $("tierLine").textContent =

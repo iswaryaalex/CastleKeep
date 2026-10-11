@@ -1,0 +1,11 @@
+NORTHWIND FAMILY PRACTICE - APRIL ROTA (SAMPLE)
+
+Mon  R. Okonjo        08:30-17:00
+Tue  T. Lindqvist     08:30-17:00
+Wed  R. Okonjo        08:30-13:00   T. Lindqvist 13:00-18:00
+Thu  T. Lindqvist     08:30-17:00
+Fri  R. Okonjo        08:30-16:00
+
+Reception covers 08:00-18:00 every weekday.
+
+This is invented data. See README.txt.

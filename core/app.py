@@ -9,6 +9,7 @@ import threading
 import time
 
 from . import policy as policy_mod
+from . import profiles as profiles_mod
 from . import tools as tools_mod
 from .lemonade import Lemonade
 from .mxc import Mxc
@@ -57,13 +58,26 @@ class App:
         self.policy_path = os.path.join(self.project_dir, "policy.json")
         self.cfg = _load_json(self.config_path)
         self._config_mtime = _mtime(self.config_path)
+
+        # policy.json is the host-wide default. Nothing the agents do reads
+        # it: every agent brings its own, out of profiles\. What still uses
+        # this one is the machinery that is not any agent's - the Run tab's
+        # dry run, the dialect negotiation at startup, and verify.py - which
+        # need a policy to compile and must not borrow one agent's boundary
+        # to make a claim about the host.
         self.policy = policy_mod.load(self.policy_path)
         self._policy_mtime = _mtime(self.policy_path)
+
+        self.profiles_dir = os.path.join(self.project_dir, "profiles")
+        self.profiles = profiles_mod.Profiles(self.profiles_dir)
 
         ws = (self.cfg.get("agent") or {}).get("workspace") or "workspace"
         self.workspace = os.path.abspath(os.path.join(self.project_dir, ws))
         os.makedirs(self.workspace, exist_ok=True)
         self.capture_dir = os.path.join(self.project_dir, "receipts")
+
+        self.events_dir = os.path.join(self.project_dir, "agent-events")
+        os.makedirs(self.events_dir, exist_ok=True)
 
         self.lock = threading.Lock()
         self.runs = []
@@ -143,6 +157,10 @@ class App:
 
         self._host_info = info
         return info
+
+    def events_dir_for(self, agent_name):
+        """Absolute path to the event folder owned by this agent."""
+        return os.path.join(self.events_dir, agent_name)
 
     def workspace_count(self):
         """How many files sit in the workspace, for the launch page's fourth
@@ -306,6 +324,70 @@ class App:
             pol, self.path_ctx(), command, cwd=cwd, caps=self.caps,
             dialect=self.dialect, capture_dir=self.capture_dir)
 
+    # -- agents -----------------------------------------------------------
+
+    def reload_profiles(self):
+        """Re-stat profiles\\ and re-read whatever moved. Called before every
+        tool call, for the same reason reload_policy is: an edit to an agent's
+        profile has to land on that agent's next call, and only on that
+        agent's."""
+        return self.profiles.reload()
+
+    def profile(self, agent=None):
+        """The agent named, or the first one. None only if the folder is
+        empty, which the startup notes will already have complained about."""
+        return self.profiles.resolve(agent)
+
+    def policy_for(self, agent=None):
+        """Which policy a request compiles under.
+
+        Pass an agent id and you get that agent's profile. Pass nothing and
+        you get policy.json, which is the host's own default and belongs to
+        the Run tab and verify rather than to anybody in the bar. Keeping the
+        two apart is what lets the Run tab make a claim about this machine
+        without that claim quietly being Finance's boundary.
+        """
+        if not agent:
+            return self.reload_policy()
+        p = self.reload_profiles().get(agent)
+        if p is None:
+            return self.reload_policy()
+        return p.policy
+
+    def agent_label(self, p):
+        """What to call an agent on screen and in the other agents' prompts.
+
+        One function so there is one answer. The dragon answers to the name
+        from the launch wizard, so the bar, the transcript, the roster every
+        other agent is given and the Mission panel all have to use that name
+        and not "Diagnostics", or the person is told to switch to an agent
+        that is not in the bar under that label.
+        """
+        if p is None:
+            return "the agent"
+        return self.assistant_name() if p.named else p.title
+
+    def agent_summaries(self):
+        """The bar, the Mission panel and the comparison card, in one list,
+        each entry carrying the agent's whole policy body."""
+        out = []
+        notes = profiles_mod.audit(self.profiles)
+        for p in self.profiles.all():
+            d = p.display()
+            d["label"] = self.agent_label(p)
+            d["notes"] = [n for n in notes if n["profile"] == p.name]
+            # The policy body travels with the summary. Four small dicts, and
+            # the alternative is the Mission panel describing one agent's
+            # boundary from a second request that can arrive after the bar has
+            # already been redrawn for a different one.
+            d["policy"] = p.policy
+            out.append(d)
+        return out
+
+    def profile_notes(self):
+        """The audit, including the entries that belong to no single agent."""
+        return profiles_mod.audit(self.reload_profiles())
+
     # -- startup ----------------------------------------------------------
 
     def start(self):
@@ -315,6 +397,13 @@ class App:
         # button labelled "re-examine this machine" unable to fix the single
         # most common setup mistake.
         self.reload_config()
+
+        self.reload_profiles()
+
+        # Create per-agent event folders so agents always have a place to write.
+        for p in self.profiles.all():
+            os.makedirs(os.path.join(self.events_dir, p.name), exist_ok=True)
+
         self.probe = self.mxc.probe()
         self.caps = self.probe.get("capabilities") or {}
         if not self.probe.get("available"):
@@ -414,21 +503,26 @@ class App:
             if len(self.runs) > 400:
                 del self.runs[:-400]
 
-    def recent_runs(self, limit=60):
+    def recent_runs(self, limit=60, agent=None):
         with self.lock:
-            return [_slim(r) for r in self.runs[-limit:]][::-1]
+            rows = self.runs
+            if agent:
+                rows = [r for r in rows if r.get("agent") == agent]
+            return [_slim(r) for r in rows[-limit:]][::-1]
 
-    def refusals(self, limit=40):
+    def refusals(self, limit=40, agent=None):
         with self.lock:
             bad = [r for r in self.runs
                    if r.get("outcome") in ("blocked", "refused-to-start", "host-gate")]
+            if agent:
+                bad = [r for r in bad if r.get("agent") == agent]
             return [_slim(r) for r in bad[-limit:]][::-1]
 
 
 def _slim(r):
-    keep = ("seq", "id", "tool", "label", "outcome", "kind", "reason", "detail",
-            "offendingField", "command", "arguments", "durationMs", "exitCode",
-            "startedAt", "dryRun", "containment", "notes")
+    keep = ("seq", "id", "agent", "tool", "label", "outcome", "kind", "reason",
+            "detail", "offendingField", "command", "arguments", "durationMs",
+            "exitCode", "startedAt", "dryRun", "containment", "notes")
     out = {k: r.get(k) for k in keep if k in r}
     out["stdout"] = (r.get("stdout") or "")[:2000]
     out["stderr"] = (r.get("stderr") or "")[:2000]

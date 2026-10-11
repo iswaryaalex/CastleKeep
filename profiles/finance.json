@@ -1,0 +1,74 @@
+{
+  "_readme": [
+    "Finance is the only agent with a network, and the only agent with nothing of",
+    "yours to send over it. Read those two facts together.",
+    "Everything from \"containment\" down is the same schema policy.json uses.",
+    "Replaces the earlier scout.json, which can be deleted."
+  ],
+
+  "name": "finance",
+  "title": "Finance",
+  "critter": "bird",
+  "task": "Rates and prices",
+  "tagline": "Looks up rates and prices. Has none of your accounts to send.",
+  "persona": "You look up money numbers on the public internet: exchange rates, central bank rates, commodity and index prices. Give the number, the date it is from, and the page it came from. You are not a financial adviser and you do not tell anyone what to buy or sell. You cannot read the person's documents, so when you are asked about a statement or a spreadsheet say plainly that you cannot reach it and point at Paperwork. If you encounter a financial deadline worth remembering, offer to add it to the calendar. If they say yes, write a YYYY-MM-DD-slug.json event file to your events folder using this schema: {\"id\":\"finance-<slug>\",\"agent\":\"finance\",\"title\":\"...\",\"detail\":\"...\",\"due\":\"YYYY-MM-DD\",\"urgency\":\"low|medium|high|critical\",\"created\":\"<ISO now>\",\"source\":\"<url>\"}.",
+  "starters": [
+    "What is the pound worth in dollars today?",
+    "What is the current Bank of England base rate?",
+    "What is an ounce of gold going for?",
+    "Read my bank statement and total up last month"
+  ],
+
+  "boundary": { "files": "no files", "network": "network" },
+
+  "description": "Outbound network, and no file access of any kind. It can fetch a page and tell you the number on it. It cannot read a document, so it has nothing to leak.",
+  "containment": "processcontainer",
+
+  "paths": {
+    "_note": "${windir}\\System32 is where curl.exe itself lives, so it has to be here or nothing runs. It is also the whole list. Nothing of yours is readable and nothing anywhere is writable, which is the trade this agent exists to show: the one that can talk to the internet is the one with nothing to say about you. This is also why it is the money agent rather than, say, the health one.",
+    "read": [
+      "${windir}\\System32",
+      "${project}\\agent-events\\finance"
+    ],
+    "write": [
+      "${project}\\agent-events\\finance"
+    ],
+    "deny": []
+  },
+
+  "network": {
+    "_note": "outbound: 'allow' means any host. Per-host rules are not supported on Windows by this binary, so there is no narrower setting to reach for. The narrowing happens on the file side instead. localNetwork stays false: public rates live on the public internet, and nothing on this machine is a price source.",
+    "outbound": "allow",
+    "localNetwork": false
+  },
+
+  "ui": {
+    "allowWindows": false,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+
+  "limits": {
+    "timeoutMs": 30000
+  },
+
+  "advanced": {
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+
+  "tools": {
+    "_note": "Identical in all four profiles on purpose. read_file is left switched on so that the last starter question, which asks Finance to read a bank statement, produces a real refusal from the container.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}

@@ -1,0 +1,15 @@
+NORTHWIND FAMILY PRACTICE - INTAKE NOTE (SAMPLE)
+Record: NW-00418      Visit: 2026-03-19      Clinician: R. Okonjo
+
+Patient: Desmond Ilori, 63
+Reason for visit: annual review.
+
+Observations
+  Blood pressure 138/86, down from 146/92 in September.
+  Weight 84.2 kg, unchanged.
+
+Plan
+  Continue current medication at the same dose.
+  No follow-up required before the next annual review.
+
+This is invented data. See README.txt.

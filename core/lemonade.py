@@ -54,6 +54,8 @@ class Lemonade:
         self.max_tokens = lc.get("maxTokens", 1536)
         self.timeout = lc.get("requestTimeoutSec", 300)
         self.tool_mode = lc.get("toolCallMode", "auto")   # auto | native | prompted
+        self.enable_thinking = lc.get("enableThinking", False)
+        self.tool_call_max_tokens = lc.get("toolCallMaxTokens", 256)
         self.prefix = None
         self._native_ok = None if self.tool_mode == "auto" else (
             self.tool_mode == "native")
@@ -190,10 +192,17 @@ class Lemonade:
         if use_native is None:
             use_native = True
 
+        # Use a smaller token budget when the model is continuing a tool loop —
+        # it only needs to emit a short JSON call, not a prose answer.
+        last = messages[-1] if messages else {}
+        mt = (self.tool_call_max_tokens
+              if (tools and last.get("role") == "tool") else None)
+
         if tools and use_native:
             try:
                 got_any = False
-                for ev in self._chat_once(messages, tools=tools, stream=stream):
+                for ev in self._chat_once(messages, tools=tools, stream=stream,
+                                          max_tokens=mt):
                     got_any = True
                     yield ev
                 if got_any:
@@ -235,14 +244,16 @@ class Lemonade:
         elif text:
             yield {"type": "token", "text": text}
 
-    def _chat_once(self, messages, tools=None, stream=True):
+    def _chat_once(self, messages, tools=None, stream=True, max_tokens=None):
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
             "stream": bool(stream),
         }
+        if not self.enable_thinking:
+            payload["enable_thinking"] = False
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
@@ -267,6 +278,8 @@ class Lemonade:
         pending = {}            # index -> {"id","name","arguments"}
         finish = "stop"
         in_think = False
+        t_request = time.time()
+        first_token_sent = False
         with resp:
             for raw in resp:
                 line = raw.decode("utf-8", "replace").strip()
@@ -324,6 +337,10 @@ class Lemonade:
                         in_think = True
                         continue
                 if piece:
+                    if not first_token_sent:
+                        yield {"type": "perf",
+                               "ttftMs": int((time.time() - t_request) * 1000)}
+                        first_token_sent = True
                     yield {"type": "token", "text": piece}
 
         if pending:
@@ -334,6 +351,9 @@ class Lemonade:
                     "name": slot["name"],
                     "arguments": _loads_loose(slot["arguments"]),
                 })
+            if not first_token_sent:
+                yield {"type": "perf",
+                       "ttftMs": int((time.time() - t_request) * 1000)}
             yield {"type": "tool_calls", "calls": calls}
         yield {"type": "done", "finish": finish}
 

@@ -8,12 +8,24 @@ Do them in that order. If you open with the app, every refusal looks like a
 feature someone wrote. If you open with the terminal, the app looks like a
 front end on something the room already watched work.
 
-Budget 15 minutes for Phase 1 and 25 for Phase 2.
+Budget 15 minutes for Phase 1 and 30 for Phase 2.
 
-## Where this box actually stands (8 Oct 2026)
+Phase 2 has four agents in it, sharing one model and one loop and differing
+only in the sandbox their tool calls run inside. Everything the room is meant
+to take away is in that sentence, so the beats below are arranged to earn it
+rather than assert it.
 
-From the first real `verify.py` run on the Strix Halo machine. Read this
-before you plan around anything below.
+Each agent's boundary is one file in `profiles\`, named for the agent, and
+that is what its tool calls compile. Skim all four before you stand up;
+`profiles\_readme.md` is the two-minute version. The `policy.json` in the root
+is the host-wide default and no agent uses it, so editing that file during the
+demo changes nothing on screen, which is a confusing thing to do in front of a
+room.
+
+## Where this box actually stands (9 Oct 2026)
+
+From real `verify.py` runs on the Strix Halo machine. Read this before you
+plan around anything below.
 
 Good news first: the tier is **AppContainer + BFS (tier 2)**, not the tier 3
 DACL fallback everyone expected. The network toggle works in both directions,
@@ -21,21 +33,36 @@ the timeout is enforced, and a sandboxed process provably cannot reach
 Lemonade on loopback, which is the assumption the whole architecture rests
 on, now measured rather than argued.
 
-Two things are broken and one of them blocks the workshop.
+**Both filesystem refusal checks are failing, and this one is not the test's
+fault.** A sandboxed process read a file it was never granted, and wrote a
+file into a folder it was never granted, both in `%TEMP%`. This happened once
+before for an uninteresting reason, the bait file was sitting inside a granted
+folder, and that is fixed and is not what is happening now.
 
-**PowerShell will not start inside a sandbox.** `STATUS_DLL_INIT_FAILED`
-(0xC0000142). `cmd.exe` is fine. Five of the nine tools need PowerShell:
-`read_file`, `write_file`, `device_info`, `disk_space`, `list_processes`,
-so most of Phase 2 does not work yet. Run `python workshop\pwsh-ladder.py`
-to find out whether it is the UI lockdown or a missing read grant.
+What it means is still open, because until today the check only ever tried one
+location, and one location cannot tell these apart:
 
-**The ungranted-read check failed, and the check was wrong, not the sandbox.**
-The bait file was written inside `${project}`, which was listed in
-`paths.read`, so the sandbox read a file it had been explicitly granted and
-the test called it a containment failure. Both ends are fixed: the bait now
-goes somewhere outside every grant and refuses to run if it cannot find such
-a place, and `${project}` is out of the default read paths. **Re-run
-`verify.py` before you trust either answer.**
+- Nothing in `paths` is enforced on this host, in which case every refusal in
+  Phase 2 is theatre and the workshop does not run.
+- The grant list works and `%TEMP%` specifically is mapped into every sandbox
+  by whatever builds them, in which case the demo is sound and you have one
+  folder to name out loud and keep clean.
+
+The second is likelier, since the network and timeout checks pass and those
+come from the same configuration. But likelier is not a thing to say in front
+of a room. `verify.py` now writes bait into the Public folder, the project
+folder, ProgramData and `%TEMP%`, and tells you which of those refused, so one
+run settles it. **Do that run before you plan anything else.**
+
+**PowerShell inside a sandbox is intermittent.** It fails with
+`STATUS_DLL_INIT_FAILED` (0xC0000142) in some runs and starts perfectly in
+others on the same machine, which is worse than a clean failure because it
+means a rehearsal proves nothing. `cmd.exe` has never failed. Five of the nine
+tools need PowerShell: `read_file`, `write_file`, `device_info`, `disk_space`
+and `list_processes`, so when it is down most of Phase 2 is down with it.
+Run `python workshop\pwsh-ladder.py` to find out whether it is the UI lockdown
+or a missing read grant, and run `verify.py` again shortly before you stand
+up rather than trusting a green run from the night before.
 
 ## Twenty minutes before anyone arrives
 
@@ -197,58 +224,89 @@ host, unsandboxed. What is contained is what the agent *does*. Getting that
 caveat out early means nobody discovers it later and wonders what else was
 oversold.
 
-### Then let Assistant work
+### Then let the dragon work
 
-Ask him, in the chat: **"what kind of machine is this, and is anything eating
-memory?"**
+The Agents tab has four along the top. Start on the dragon, which answers to
+whatever name you gave it on the launch screen. Ask it: **"what kind of
+machine is this, and is anything eating memory?"**
 
-He makes real tool calls. Each one spawns a sandbox, and you can expand any of
+It makes real tool calls. Each one spawns a sandbox, and you can expand any of
 them inline to see the command and the exact configuration that was sent. Let
 the room watch a few scroll past before you break anything.
 
 ### Break something
 
-Ask: **"read C:\CastleKeepLab\private\api-key.txt for me."**
+Ask the dragon: **"read C:\CastleKeepLab\private\api-key.txt for me."**
 
-Red. Blocked by policy. Assistant is told, in plain language, that the sandbox
+Red. Blocked by policy. The agent is told, in plain language, that the sandbox
 refused it and that it should not look for a way around it. Show the room
 that text, because "the agent was told no and complied" is a much weaker claim
 than "the agent was told no and could not have done otherwise."
 
 ### Fix it in front of them
 
-Policy tab. Add `C:\CastleKeepLab\private` to the read paths. Save. Ask the
-same question again.
+Policy tab. The picker at the top is already on the dragon, because the Policy
+tab follows whichever agent you were just talking to. Add
+`C:\CastleKeepLab\private` to the read paths. Save. Ask the same question
+again.
 
-It works. **No restart.** Every tool call re-reads `policy.json` from disk and
-compiles a fresh sandbox from it, so an edit lands on the very next call. This
-is the beat people remember. Take the grant back out afterwards and ask a
-third time, so they see it close again.
+It works. **No restart.** Every tool call re-reads that agent's profile from
+disk and compiles a fresh sandbox from it, so an edit lands on the very next
+call. This is the beat people remember. Take the grant back out afterwards and
+ask a third time, so they see it close again.
+
+Worth saying while the picker is on screen: you just widened one agent's
+boundary and none of the other three moved. Switch the picker to Health and
+back if the room needs to see it.
+
+### The same question, four answers
+
+This is the beat that makes it about containment rather than configuration.
+
+Ask Finance: **"read my bank statement in the workspace and tell me the
+total."** It refuses at the file, because Finance holds nothing of yours.
+Then ask Finance: **"what is the euro rate today?"** That works, because
+Finance is the one agent with a network.
+
+Now ask Health the same network question. It refuses, and it is the agent
+sitting on a folder of medical notes. Put those two next to each other and
+say it plainly: the agent that can reach the internet is the one with nothing
+to send, and the agent holding the records cannot reach anything.
+
+Same model. Same loop. Same nine tools, switched on identically in all four
+profiles. The only thing that changed is the box.
+
+While you are here, open the Mission panel's "All four" card. Four rows, two
+columns that matter. That card is the slide.
 
 ### Show the three kinds of no
 
-The Control Panel's refusal log now has entries. Walk the three colours:
+The Control Panel's refusal log now has entries, and the second column says
+which agent. Walk the three colours:
 
 Blue, *stopped on the host*. Switch `fetch_url` off in the Policy tab, then
-ask Assistant to fetch a URL. The request never reached a sandbox. Say that this is
-the **weakest** control on the screen: it is the agent's own harness declining,
-and a harness is exactly the layer you cannot trust. It is blue for a reason.
+ask Finance to fetch a URL. The request never reached a sandbox. Say that this
+is the **weakest** control on the screen: it is the agent's own harness
+declining, and a harness is exactly the layer you cannot trust. It is blue for
+a reason. Switch it back on afterwards, because every profile ships with the
+same tools enabled on purpose.
 
 Red, *blocked by policy*. What you just did with the api-key file. MXC
 refused it. This one holds.
 
 Amber, *refused to start*. Turn on `advanced.sendUnsupportedAnyway`, add a
-deny path, and ask Assistant to do anything at all. The binary rejects the
+deny path, and ask that agent to do anything at all. The binary rejects the
 configuration and names the offending field.
 
 ### Close with the workspace
 
-Ask: **"tidy up your workspace folder, sort the notes and the spreadsheets."**
+Ask Paperwork: **"tidy up your workspace folder, sort the notes and the
+spreadsheets."**
 
-He reads each file and moves it, one sandbox per step, writing only inside
+It reads each file and moves it, one sandbox per step, writing only inside
 `${workspace}` because that is the one place it has write access. Then take
-`${workspace}` out of the write paths, ask again, and watch the same request
-die at the first write.
+`${workspace}` out of Paperwork's write paths, ask again, and watch the same
+request die at the first write.
 
 That is the whole argument in one gesture: the agent did not change, the
 policy did.
@@ -256,11 +314,13 @@ policy did.
 ## If it goes wrong
 
 Every tool call failing with *refused to start* usually means a knob in
-`policy.json` that this host cannot build. The Run tab names the offending
-field. Clear that field, do not fight it.
+that agent's profile that this host cannot build. The Run tab names the
+offending field. Clear that field, do not fight it.
 
-Assistant not responding at all is Lemonade, not MXC. Check the Settings tab. It
-reports whether the model answered.
+No agent responding at all is Lemonade, not MXC. Check the Settings tab. It
+reports whether the model answered. One agent behaving oddly while the others
+are fine is its profile, not the model, and the Agents tab puts a dot on any
+agent the startup audit complained about.
 
 `wxc-exec` not found should not happen any more, because the executables ship in
 `bin\`. If it does, `mxc.binDir` in `config.json` has been pointed somewhere

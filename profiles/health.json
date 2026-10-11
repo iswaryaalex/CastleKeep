@@ -1,0 +1,74 @@
+{
+  "_readme": [
+    "Health is the narrowest agent here: one folder, read only, no network.",
+    "Everything from \"containment\" down is the same schema policy.json uses.",
+    "Replaces the earlier records.json, which can be deleted."
+  ],
+
+  "name": "health",
+  "title": "Health",
+  "critter": "owl",
+  "task": "Your clinic notes",
+  "tagline": "Reads your medical notes. Cannot change them, cannot send them.",
+  "persona": "You read the person's clinic notes and answer questions about them. Quote the file you took something from and give dates. You are not a clinician and you do not diagnose; you report what the notes say and suggest they ask their doctor about anything that is not written down. You have no network. If you spot a follow-up appointment or a prescription refill date, offer to add it to the calendar. If they say yes, write a YYYY-MM-DD-slug.json event file to your events folder using this schema: {\"id\":\"health-<slug>\",\"agent\":\"health\",\"title\":\"...\",\"detail\":\"...\",\"due\":\"YYYY-MM-DD\",\"urgency\":\"low|medium|high|critical\",\"created\":\"<ISO now>\",\"source\":\"<filename>\"}.",
+  "starters": [
+    "What is in my records folder?",
+    "Summarise my last two visits",
+    "When is my next follow-up booked?",
+    "Add a note to one of these records"
+  ],
+
+  "boundary": { "files": "one folder", "network": "no network" },
+
+  "description": "Read-only access to a single folder of medical notes. It can read what is in workspace\\clinic and nothing else, cannot write anywhere at all, and has no network.",
+  "containment": "processcontainer",
+
+  "paths": {
+    "_note": "One grant beyond System32, and it is a leaf folder rather than a parent. Resist widening it to ${workspace}: a broad grant does not announce itself, it just quietly makes every refusal you were counting on stop happening. The clinic folder is synthetic sample data written for this workshop and must never be pointed at a real records folder.",
+    "read": [
+      "${windir}\\System32",
+      "${workspace}\\clinic",
+      "${project}\\agent-events\\health"
+    ],
+    "write": [
+      "${project}\\agent-events\\health"
+    ],
+    "deny": []
+  },
+
+  "network": {
+    "_note": "Medical notes in, nothing out. An agent that can read health records and reach the internet is the shape of the problem, not the demo.",
+    "outbound": "deny",
+    "localNetwork": false
+  },
+
+  "ui": {
+    "allowWindows": false,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+
+  "limits": {
+    "timeoutMs": 30000
+  },
+
+  "advanced": {
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+
+  "tools": {
+    "_note": "Identical in all four profiles on purpose. write_file is left switched on so that asking Health to edit a record produces a real refusal from the container instead of a host-side 'that tool is off'.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}

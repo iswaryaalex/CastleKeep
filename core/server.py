@@ -94,9 +94,12 @@ class Handler(BaseHTTPRequestHandler):
     # -- routing ----------------------------------------------------------
 
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
         try:
             if path.startswith("/api/"):
+                q = urllib.parse.parse_qs(parsed.query)
+                self.q = {k: v[0] for k, v in q.items() if v}
                 return self._api_get(path)
             return self._static(path)
         except Exception:
@@ -123,8 +126,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_get(self, path):
         app = self.app
+        agent = (getattr(self, "q", {}) or {}).get("agent")
         if path == "/api/state":
             pol = app.reload_policy()
+            app.reload_profiles()
             # config.json gets the same treatment as policy.json: edited on
             # disk, picked up on the next poll. The UI should never be able to
             # disagree with the file about which model it is talking to.
@@ -140,9 +145,15 @@ class Handler(BaseHTTPRequestHandler):
                 "notes": app.startup_notes,
                 "lemonade": app.lemonade.health(),
                 "warmup": app.warmup_state(),
+                # The host's own default, which belongs to the Run tab and to
+                # verify. The agents each bring their own and are listed
+                # separately below.
                 "policy": pol,
                 "lint": policy_mod.lint(pol, app.path_ctx(), app.caps),
                 "tools": tools_mod.describe(pol),
+                "profiles": app.agent_summaries(),
+                "defaultAgent": app.profiles.default_name(),
+                "profileNotes": app.profile_notes(),
                 "paths": app.path_ctx(),
                 "runs": app.recent_runs(),
                 "refusals": app.refusals(),
@@ -158,12 +169,18 @@ class Handler(BaseHTTPRequestHandler):
                                "lemonade": app.lemonade.health(),
                                "warmup": app.warmup_state(),
                                "notes": app.startup_notes})
+        if path == "/api/profiles":
+            return self._json({"profiles": app.agent_summaries(),
+                               "defaultAgent": app.profiles.default_name(),
+                               "notes": app.profile_notes()})
         if path == "/api/policy":
-            return self._json(app.reload_policy())
+            # ?agent=health is that agent's own file. No agent at all is
+            # policy.json, which is the host default and nobody's boundary.
+            return self._json(app.policy_for(agent))
         if path == "/api/runs":
-            return self._json({"runs": app.recent_runs(200)})
+            return self._json({"runs": app.recent_runs(200, agent=agent)})
         if path == "/api/refusals":
-            return self._json({"refusals": app.refusals(200)})
+            return self._json({"refusals": app.refusals(200, agent=agent)})
         if path == "/api/health":
             return self._json({"lemonade": app.lemonade.health(),
                                "warmup": app.warmup_state(),
@@ -193,16 +210,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"saved": True, "setup": saved})
 
         if path == "/api/policy":
-            incoming = self._body()
+            # The policy body arrives either as the whole body, the way it
+            # always did, or wrapped with the agent it belongs to. Both shapes
+            # are accepted so that a saved copy of the old single-policy UI
+            # still works against this server.
+            body = self._body()
+            agent = body.pop("agent", None) if isinstance(body, dict) else None
+            incoming = body.get("policy") if (agent and "policy" in body) else body
             lint = policy_mod.lint(incoming, app.path_ctx(), app.caps)
             if any(n["level"] == "error" for n in lint):
                 return self._json({"saved": False, "lint": lint}, 400)
-            saved = app.save_policy(incoming)
-            return self._json({"saved": True, "policy": saved, "lint": lint})
+            if agent:
+                prof = app.profiles.get(agent)
+                if prof is None:
+                    return self._json({"saved": False,
+                                       "error": "no agent called %r" % agent}, 404)
+                app.profiles.save(prof.name, incoming)
+            else:
+                app.save_policy(incoming)
+            return self._json({"saved": True, "agent": agent,
+                               "policy": app.policy_for(agent), "lint": lint,
+                               "notes": app.profile_notes()})
 
         if path == "/api/policy/preview":
             body = self._body()
-            pol = body.get("policy") or app.reload_policy()
+            pol = body.get("policy") or app.policy_for(body.get("agent"))
             cmd = body.get("command") or tools_mod.shell_cmd("dir /b")
             try:
                 cfg, notes = app.compile_for(pol, cmd)
@@ -212,9 +244,13 @@ class Handler(BaseHTTPRequestHandler):
                                "lint": policy_mod.lint(pol, app.path_ctx(), app.caps)})
 
         if path == "/api/policy/dryrun":
-            pol = app.reload_policy()
+            body = self._body()
+            who = body.get("agent")
+            pol = app.policy_for(who)
             cfg, notes = app.compile_for(pol, tools_mod.shell_cmd("ver"))
-            run = app.mxc.execute(cfg, label="policy dry-run", dry_run=True)
+            label = "policy dry-run (%s)" % who if who else "policy dry-run"
+            run = app.mxc.execute(cfg, label=label, dry_run=True)
+            run["agent"] = who
             app.record_run(run)
             return self._json({"run": _slim(run), "notes": notes})
 
@@ -265,7 +301,12 @@ class Handler(BaseHTTPRequestHandler):
                            "Loading %s into memory - the first answer will be "
                            "slow, the rest will not." % (w.get("model") or "the model")})
 
-            agent = Agent(app)
+            who = body.get("agent")
+            agent = Agent(app, who)
+            if who and agent.name != who:
+                self._sse({"type": "notice", "message":
+                           "There is no agent called %r, so this went to %s."
+                           % (who, agent.title)})
             try:
                 agent.turn(body.get("message") or "",
                            body.get("history") or [], self._sse)
@@ -279,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/tool":
             body = self._body()
             self._sse_open()
-            agent = Agent(app)
+            agent = Agent(app, body.get("agent"))
             try:
                 text = agent.call_tool(body.get("name") or "",
                                        body.get("arguments") or {}, self._sse)

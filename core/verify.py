@@ -54,31 +54,98 @@ def _granted_paths(app):
     return out
 
 
-def _pick_bait_dir(app):
-    """Somewhere outside every granted path. Returns (dir, file, problem)."""
+def _bait_locations(app):
+    """Every location outside every granted path. Returns (list, problem).
+
+    Plural on purpose. One bait file in one directory can tell you that a
+    refusal did not happen, and then it leaves you guessing between two very
+    different diagnoses: this host enforces no filesystem policy at all, or
+    this host enforces it everywhere except the one directory you happened to
+    choose. Those call for opposite responses - stop the workshop, or move the
+    bait and name the exception out loud - and a single probe cannot separate
+    them. Probing all of them costs three extra sandbox launches and turns a
+    guess into an answer.
+
+    Each entry is (label, dir, file). The first entry is the headline; the
+    rest exist to give the headline a shape.
+    """
     granted = _granted_paths(app)
     candidates = [
-        os.path.join(os.environ.get("TEMP") or os.environ.get("TMP") or
-                     os.path.join(os.path.expanduser("~"), "AppData", "Local",
-                                  "Temp"),
-                     "castlekeep-bait"),
-        os.path.join(os.environ.get("PUBLIC") or r"C:\Users\Public",
-                     "castlekeep-bait"),
-        os.path.join(app.project_dir, BAIT_DIR),
+        ("the Public folder",
+         os.path.join(os.environ.get("PUBLIC") or r"C:\Users\Public",
+                      "castlekeep-bait")),
+        ("the project folder", os.path.join(app.project_dir, BAIT_DIR)),
+        ("ProgramData",
+         os.path.join(os.environ.get("PROGRAMDATA") or r"C:\ProgramData",
+                      "castlekeep-bait")),
+        # Last, and deliberately still on the list. Your own Temp folder is
+        # both the most likely place for a runner to map in by default and
+        # the place a leak matters least, so it makes a poor headline and a
+        # very good control.
+        ("your Temp folder",
+         os.path.join(os.environ.get("TEMP") or os.environ.get("TMP") or
+                      os.path.join(os.path.expanduser("~"), "AppData", "Local",
+                                   "Temp"),
+                      "castlekeep-bait")),
     ]
-    for d in candidates:
+    out = []
+    for label, d in candidates:
         if any(_under(d, g) for g in granted):
             continue
         try:
             os.makedirs(d, exist_ok=True)
         except Exception:
             continue
-        return d, os.path.join(d, BAIT_NAME), None
-    return None, None, (
+        out.append((label, d, os.path.join(d, BAIT_NAME)))
+    if out:
+        return out, None
+    return [], (
         "Every location this check knows about is inside a granted path, so "
         "there is nowhere to put a file the sandbox should not be able to "
         "read. Granted right now: %s. Narrow paths.read before trusting any "
         "claim of containment." % (", ".join(granted) or "nothing"))
+
+
+def _join(labels):
+    if not labels:
+        return "nowhere"
+    if len(labels) == 1:
+        return labels[0]
+    return "%s and %s" % (", ".join(labels[:-1]), labels[-1])
+
+
+def _verdict(kind, leaked, refused):
+    """The English for a negative test that ran in several places.
+
+    Three outcomes, and they are not degrees of the same thing. Nothing got
+    through is the result you wanted. Everything got through means the grant
+    list is decorative. Some got through is the awkward one, and it is the
+    one a single-location check used to report as if it were the second: the
+    policy is working, and there is a named gap in it. Saying which of those
+    three happened is the entire reason this check exists.
+    """
+    got = ("The bait file's contents came back from %s"
+           if kind == "read" else "A file was created in %s")
+    if not leaked:
+        return ("Refused everywhere it was tried: %s. Grants are being "
+                "enforced, and what is not granted is not reachable."
+                % _join(refused))
+    if not refused:
+        return ("THIS SHOULD HAVE BEEN REFUSED AND WAS NOT. "
+                + (got % _join(leaked)) +
+                ", which was every ungranted location this check knows about. "
+                "The grant list is not being enforced on this host at all. Do "
+                "not describe this setup as contained, and do not run the "
+                "workshop on it until this passes.")
+    return ("THIS SHOULD HAVE BEEN REFUSED AND WAS NOT, but only in some "
+            "places. " + (got % _join(leaked)) + ", and %s refused. Grants "
+            "are being enforced, so this is a gap in the boundary rather than "
+            "an absent boundary, and a gap like this is usually a location "
+            "the host maps into every sandbox by default. Find out why before "
+            "you stand up. Until you have, treat the named location as "
+            "reachable by every agent on this machine whatever its profile "
+            "says, and keep anything you would not hand over out of it."
+            % _join(refused))
 
 
 def _step(sid, title, status, detail="", evidence=None, kind="live"):
@@ -181,9 +248,19 @@ def run_all(app, include_network=True):
     #
     # So: pick a location that is outside every granted path, and if no such
     # location can be found, say that instead of pretending to test.
-    bait_dir, bait, bait_problem = _pick_bait_dir(app)
-    if bait:
-        with open(bait, "w", encoding="utf-8") as f:
+    #
+    # It then went wrong a second time, differently, which is why this is now
+    # plural. One location came back readable and the check announced that the
+    # filesystem policy was not being enforced, full stop. That was a bigger
+    # claim than one probe can support: the same evidence fits a host that
+    # enforces nothing and a host that enforces everything except one folder
+    # it maps in by default, and only the first of those is a reason to call
+    # off a workshop. Writing bait into every ungranted location we can find
+    # and reporting the pattern costs a few seconds and answers the question
+    # instead of raising it.
+    baits, bait_problem = _bait_locations(app)
+    for _lbl, _dir, _file in baits:
+        with open(_file, "w", encoding="utf-8") as f:
             f.write(BAIT_TEXT)
 
     granted = os.path.join(app.workspace, "verify-granted.txt")
@@ -239,7 +316,27 @@ def run_all(app, include_network=True):
         yield emit(_step("live:bait", "Somewhere to put a file the agent "
                                       "must not read", "fail", bait_problem))
 
-    if ps_works and bait:
+    def sweep(build, leaked_at):
+        """Run one negative test at every ungranted location.
+
+        `build(dir, file)` makes the command, `leaked_at(run, dir, file)` says
+        whether that attempt got through. Returns (leaked, refused, evidence),
+        the first two being lists of labels.
+        """
+        leaked, refused, seen = [], [], []
+        for label, d, f in baits:
+            run, _ = live("sweep", "ungranted location: %s" % label,
+                          build(d, f), "denied")
+            got = leaked_at(run, d, f)
+            (leaked if got else refused).append(label)
+            seen.append({"location": label, "path": f, "leaked": got,
+                         "outcome": run["outcome"],
+                         "exitCode": run.get("exitCode"),
+                         "stdout": (run.get("stdout") or "")[:400],
+                         "stderr": (run.get("stderr") or "")[:400]})
+        return leaked, refused, {"attempts": seen}
+
+    if ps_works and baits:
         run, ev = live("live:read-granted", "Read a file the policy grants",
                        tools_mod._b_read_file({"path": granted}), "ok",
                        "The granted path is readable, so grants are taking effect.")
@@ -252,39 +349,41 @@ def run_all(app, include_network=True):
                        "The workspace is writable.")
         yield emit(ev)
 
-        run, ev = live("live:read-denied",
-                       "Refuse a file the policy does NOT grant",
-                       tools_mod._b_read_file({"path": bait}), "denied")
-        leaked = BAIT_TEXT.split(".")[0] in (run.get("stdout") or "")
-        if leaked:
-            ev["status"] = "fail"
-            ev["detail"] = ("The bait file's contents came back. The filesystem "
-                            "policy is not being enforced on this host.")
-        yield emit(ev)
+    if (ps_works or cmd_works) and baits:
+        if ps_works:
+            def read_at(f):
+                return tools_mod._b_read_file({"path": f})
+        else:
+            # PowerShell is down, so fall back to cmd's `type`. Same question,
+            # cruder instrument: if the bait text comes back, the grant list
+            # is not being enforced there.
+            def read_at(f):
+                return tools_mod.shell_cmd("type %s" % tools_mod._q(f))
 
-        run, ev = live("live:write-denied",
-                       "Refuse a write the policy does NOT grant",
-                       tools_mod._b_write_file(
-                           {"path": os.path.join(bait_dir, "should-not-exist.txt"),
-                            "content": "x"}), "denied")
-        if os.path.exists(os.path.join(bait_dir, "should-not-exist.txt")):
-            ev["status"] = "fail"
-            ev["detail"] = "The file was created. Write policy is not enforced."
-        yield emit(ev)
-    elif cmd_works and bait:
-        # PowerShell is down, so fall back to cmd's `type`. Same question,
-        # cruder instrument: if the bait text comes back, the grant list is
-        # not being enforced.
-        run, ev = live("live:read-denied",
-                       "Refuse a file the policy does NOT grant",
-                       tools_mod.shell_cmd("type %s" % tools_mod._q(bait)), "denied")
-        if BAIT_TEXT.split(".")[0] in (run.get("stdout") or ""):
-            ev["status"] = "fail"
-            ev["detail"] = ("The bait file's contents came back from %s. The "
-                            "filesystem policy is not being enforced on this "
-                            "host." % bait)
-        yield emit(ev)
-        ev["evidence"] = dict(ev.get("evidence") or {}, baitPath=bait)
+        leaked, refused, ev_read = sweep(
+            lambda d, f: read_at(f),
+            lambda run, d, f: (run["outcome"] == "ok" or
+                               BAIT_TEXT.split(".")[0] in (run.get("stdout") or "")))
+        yield emit(_step("live:read-denied",
+                         "Refuse a file the policy does NOT grant",
+                         "fail" if leaked else "pass",
+                         _verdict("read", leaked, refused), ev_read))
+
+    if ps_works and baits:
+        # The write side has to be judged on the host, not on the exit code.
+        # A runner can report a clean exit for a write that never landed, so
+        # the file either exists afterwards or it does not.
+        def wrote(run, d, f):
+            return os.path.exists(os.path.join(d, "should-not-exist.txt"))
+
+        leaked, refused, ev_write = sweep(
+            lambda d, f: tools_mod._b_write_file(
+                {"path": os.path.join(d, "should-not-exist.txt"), "content": "x"}),
+            wrote)
+        yield emit(_step("live:write-denied",
+                         "Refuse a write the policy does NOT grant",
+                         "fail" if leaked else "pass",
+                         _verdict("write", leaked, refused), ev_write))
 
     # UI policy
     run, ev = live("live:ui", "UI restrictions do not break a console process",

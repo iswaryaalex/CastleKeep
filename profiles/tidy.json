@@ -1,0 +1,76 @@
+{
+  "_superseded": [
+    "Superseded by the four shipped profiles. Kept only so an older link",
+    "still resolves. The app skips it. Safe to delete."
+  ],
+  "superseded": true,
+  "_readme": [
+    "Tidy is the only agent allowed to change anything. Everything from",
+    "\"containment\" down is the same schema policy.json uses."
+  ],
+
+  "name": "tidy",
+  "title": "Tidy",
+  "critter": "cat",
+  "tagline": "Sorts the workspace. Can write there, and nowhere else.",
+  "persona": "You sort and rename files in one workspace folder. Say what you intend to do and wait to be told yes before you move or overwrite anything. List the files first; never guess a filename. You have no network, so nothing you touch can leave this machine.",
+  "starters": [
+    "What is in my workspace?",
+    "Group these files by type",
+    "Rename the notes files so they sort by date",
+    "Try to tidy my Documents folder"
+  ],
+
+  "boundary": { "files": "workspace", "network": "no network" },
+
+  "description": "Read and write inside one workspace folder. It is the only agent here that can change a file, and the folder it can change is the only folder it can see.",
+  "containment": "processcontainer",
+
+  "paths": {
+    "_note": "Read and write are the same folder, which is what makes this one safe to let loose. The last starter question asks it to tidy ${home}\\Documents on purpose: that folder is not in this list, so watch what comes back.",
+    "read": [
+      "${windir}\\System32",
+      "${workspace}"
+    ],
+    "write": [
+      "${workspace}"
+    ],
+    "deny": []
+  },
+
+  "network": {
+    "_note": "An agent with write access and an open socket is a file exfiltration tool. Keep these two apart.",
+    "outbound": "deny",
+    "localNetwork": false
+  },
+
+  "ui": {
+    "allowWindows": false,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+
+  "limits": {
+    "timeoutMs": 30000
+  },
+
+  "advanced": {
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+
+  "tools": {
+    "_note": "Identical in all four profiles on purpose. This gate is host-side, so a tool switched off here never reaches a sandbox and MXC never gets to refuse it.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}

@@ -19,16 +19,21 @@ import time
 from . import policy as policy_mod
 from . import tools as tools_mod
 
-SYSTEM = """You are {name}, the agent inside CastleKeep. The person in front of \
-you chose that name for you, so answer to it. You help them understand and fix \
-their own Windows device.
+SYSTEM = """You are {name}, one of the agents inside CastleKeep. Your job is \
+{task}.
+
+{persona}
 
 How you work:
 - You run entirely on this machine. The model is served locally by Lemonade. \
 Nothing the person says goes to the internet.
 - You have tools. Every tool call runs inside a fresh, throwaway sandbox with \
-a security policy the person controls. You do not control that policy and you \
-cannot work around it.
+a security policy the person controls. Each agent here gets a different one, \
+and yours is set out below. You do not control it and you cannot work around \
+it.
+- The other agents are separate conversations. You cannot see what they have \
+been asked and they cannot see this. If something the person wants is outside \
+your boundary, name the agent that has it and let them switch.
 - If a tool comes back refused, say so plainly and say which rule stopped it. \
 Do not retry the same thing. Do not pretend you got the data. If the person \
 wants that access, tell them which knob in the Policy tab to change.
@@ -39,6 +44,11 @@ How you answer:
 - When you spot something worth fixing, say what you would do and ask before \
 doing it.
 """
+
+# There is deliberately no handover text here. Switching agent in the UI swaps
+# the whole conversation rather than carrying one across, so a model is never
+# handed a transcript produced under a boundary that is not its own. The
+# history that arrives with a turn is always that agent's own history.
 
 
 def _fmt_result(run, tool_name, notes):
@@ -73,8 +83,39 @@ def _fmt_result(run, tool_name, notes):
 
 
 class Agent:
-    def __init__(self, app):
+    def __init__(self, app, agent=None):
         self.app = app              # core.app.App
+        self.requested = agent
+        p = app.profile(agent)
+        # The id, not the object. Profiles.reload() hands back a new Profile
+        # whenever the file moves, so anything held across a turn goes stale
+        # exactly when it matters: the tool call after the person saved an
+        # edit.
+        self.name = p.name if p is not None else None
+        self.title = p.title if p is not None else "the agent"
+
+    def profile(self):
+        """Re-fetched per call, never cached."""
+        return self.app.reload_profiles().get(self.name) if self.name else None
+
+    def policy(self):
+        """This agent's own policy, re-read from disk for THIS call. Not
+        cached, not inherited from the start of the turn. An edit in the
+        Policy tab lands on the very next tool call, and lands only on the
+        agent whose file was edited.
+
+        With no profiles on disk at all we fall back to policy.json, so a
+        stripped-down copy of this app with the profiles folder deleted still
+        runs as the single-agent version it used to be.
+        """
+        p = self.profile()
+        return p.policy if p is not None else self.app.reload_policy()
+
+    def display_name(self):
+        """The launch wizard names one agent, the dragon. Everyone else goes
+        by their job title, because a room full of pet names is harder to
+        follow, not friendlier."""
+        return self.app.agent_label(self.profile())
 
     # -- one tool call ----------------------------------------------------
 
@@ -82,10 +123,7 @@ class Agent:
         app = self.app
         t0 = time.time()
 
-        # Re-read the policy from disk for THIS call. Not cached, not
-        # inherited from the start of the turn. This is what makes an edit in
-        # the Policy tab land on the very next tool call.
-        pol = app.reload_policy()
+        pol = self.policy()
         gate = (pol.get("tools") or {})
         tool = tools_mod.BY_NAME.get(name)
 
@@ -98,19 +136,21 @@ class Agent:
         if not gate.get(name, not tool.danger):
             rec = {
                 "id": "gate-%d" % (int(t0 * 1000) % 100000000),
+                "agent": self.name,
                 "label": name, "outcome": "host-gate",
                 "kind": "host-gate", "command": None,
-                "reason": "The tool '%s' is switched off in policy.json under "
-                          "\"tools\". This gate is on the HOST - the request never "
-                          "reached a sandbox, so MXC never saw it." % name,
+                "reason": "The tool '%s' is switched off under \"tools\" in %s. "
+                          "This gate is on the HOST - the request never reached "
+                          "a sandbox, so MXC never saw it." % (name, self._file()),
                 "startedAt": t0, "durationMs": 0, "arguments": arguments,
             }
             app.record_run(rec)
             emit({"type": "sandbox", "run": rec})
             emit({"type": "tool_result", "name": name, "outcome": "host-gate",
                   "text": rec["reason"]})
-            return ("TOOL DISABLED. %s Tell the user they can switch it back on "
-                    "in the Policy tab." % rec["reason"])
+            return ("TOOL DISABLED. %s This is not a containment result and you "
+                    "should not describe it as one. Tell the user they can switch "
+                    "it back on in the Policy tab." % rec["reason"])
 
         try:
             command, tool = tools_mod.build_command(name, arguments)
@@ -127,6 +167,10 @@ class Agent:
         run["arguments"] = arguments
         run["notes"] = notes
         run["tool"] = name
+        # Which agent's boundary this ran under. The Run tab lists every
+        # sandbox this process has spawned, and with four agents in play a row
+        # that does not say whose it was cannot be read at all.
+        run["agent"] = self.name
         app.record_run(run)
         emit({"type": "sandbox", "run": _public(run)})
 
@@ -135,18 +179,41 @@ class Agent:
               "text": text[:4000]})
         return text
 
+    def _file(self):
+        return "profiles\\%s.json" % self.name if self.name else "policy.json"
+
+    # -- the prompt -------------------------------------------------------
+
+    def system_prompt(self, pol=None):
+        """Who this agent is, what it is for, what it can reach, and who to
+        hand over to. Built per turn, from the file on disk, so editing a
+        persona is the same kind of edit as editing a path grant."""
+        pol = self.policy() if pol is None else pol
+        p = self.profile()
+        # .replace rather than .format, because the prompt above is edited
+        # often and one stray brace in an example would turn a text edit into
+        # a KeyError at chat time.
+        out = SYSTEM.replace("{name}", self.display_name())
+        out = out.replace("{task}", (p.task.lower() if p else
+                                     "helping with this Windows machine"))
+        out = out.replace("{persona}", (p.persona if p else "").strip())
+        return out + _policy_briefing(pol, self.app) + _roster(self.app, self.name)
+
     # -- a whole turn -----------------------------------------------------
 
     def turn(self, user_text, history, emit):
         app = self.app
-        pol = app.reload_policy()
+        pol = self.policy()
         schemas = tools_mod.schemas(pol)
 
-        # .replace rather than .format, because the prompt below it is edited
-        # often and one stray brace in an example would turn a text edit into
-        # a KeyError at chat time.
-        system = SYSTEM.replace("{name}", app.assistant_name())
-        messages = [{"role": "system", "content": system + _policy_briefing(pol, app)}]
+        max_hist = (app.cfg.get("agent") or {}).get("maxHistoryMessages", 12)
+        if len(history) > max_hist:
+            history = history[-max_hist:]
+
+        # history is this agent's own and nobody else's. The UI keeps a
+        # separate thread per agent, so there is never a stretch of transcript
+        # here that was produced under a different policy.
+        messages = [{"role": "system", "content": self.system_prompt(pol)}]
         messages += history
         messages.append({"role": "user", "content": user_text})
 
@@ -168,6 +235,8 @@ class Agent:
                     emit({"type": "thinking", "text": ev["text"]})
                 elif kind == "tool_calls":
                     calls = ev["calls"]
+                elif kind == "perf":
+                    emit({"type": "perf", "ttftMs": ev["ttftMs"]})
                 elif kind == "notice":
                     emit({"type": "notice", "message": ev["message"]})
                 elif kind == "error":
@@ -237,7 +306,8 @@ def _policy_briefing(pol, app):
             return vals
 
     lines = [
-        "\n\nThe sandbox policy in force right now:",
+        "\n\nToday's date: %s" % time.strftime("%d %B %Y"),
+        "The sandbox policy in force right now:",
         "- Readable: %s" % (", ".join(show("read")) or "nothing"),
         "- Writable: %s" % (", ".join(show("write")) or "nothing"),
     ]
@@ -253,4 +323,26 @@ def _policy_briefing(pol, app):
         lines.append("- Switched off entirely: %s" % ", ".join(sorted(off)))
     lines.append("Anything not listed as readable is not readable. Do not "
                  "guess at paths outside it.")
+    return "\n".join(lines)
+
+
+def _roster(app, me):
+    """The other agents and what each one can reach.
+
+    Without this the model knows only its own walls, so the best it can manage
+    when asked for something outside them is "I cannot do that" - which is
+    true and useless. With it, a refusal comes with somewhere to go, and the
+    person learns the shape of the four boxes by being sent around them.
+    """
+    others = [p for p in app.profiles.all() if p.name != me]
+    if not others:
+        return ""
+    lines = ["", "", "The person can switch to these agents in the bar at the "
+                   "top. You cannot call them and you cannot see their "
+                   "conversations. Send the person to one by name when what "
+                   "they want is clearly its job:"]
+    for p in others:
+        lines.append("- %s. %s Can reach: %s, %s."
+                     % (app.agent_label(p), p.tagline, p.boundary["files"],
+                        p.boundary["network"]))
     return "\n".join(lines)

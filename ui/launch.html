@@ -11,15 +11,11 @@
 <link rel="stylesheet" href="/tokens.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
 <style>
-/* Drop EBGaramond-Regular.woff2 and EBGaramond-SemiBold.woff2 into ui/fonts/
-   and these take effect. No link to a font CDN on purpose: this page is plain
-   http on loopback and the machine it runs on may have no internet at all. If
-   the files are absent the stack below falls through to a system Garamond and
-   then to Georgia, which is why no layout depends on the exact metrics. */
-@font-face{font-family:"EB Garamond"; src:url("/fonts/EBGaramond-Regular.woff2") format("woff2");
-  font-weight:400; font-style:normal; font-display:swap}
-@font-face{font-family:"EB Garamond"; src:url("/fonts/EBGaramond-SemiBold.woff2") format("woff2");
-  font-weight:600; font-style:normal; font-display:swap}
+/* The two @font-face blocks that used to sit here now live in tokens.css,
+   which this page already links, because the app pages need the same two
+   families and a second declaration of one family is a way to end up with the
+   launch screen on Georgia and the app on Garamond. See ui/fonts/README.md for
+   which files to drop in and why there is no CDN link anywhere here. */
 
 *{box-sizing:border-box}
 html{height:100%}
@@ -232,7 +228,13 @@ input[type=text]:focus{border-color:var(--border2); box-shadow:0 0 0 3px var(--b
 
     <section class="step s0 live" data-i="0">
       <h2>CastleKeep</h2>
-      <p class="lede">A local assistant that can only do what you let it.<br>Four short steps and it is yours.</p>
+      <!-- The claim, and the only place it is made. Singular when this page
+           was written and there was one agent; four now, and a line that says
+           "assistant" while the app shows four is the first thing the room
+           notices. The claim itself is unchanged, because it is the right one:
+           it says what is true of the machine, not what is true of the
+           agent's intentions. -->
+      <p class="lede">Four local assistants that can only do what you let them.<br>Four short steps and they are yours.</p>
     </section>
 
     <section class="step" data-i="1">

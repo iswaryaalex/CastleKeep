@@ -1,0 +1,77 @@
+{
+  "_superseded": [
+    "Superseded by the four shipped profiles. Kept only so an older link",
+    "still resolves. The app skips it. Safe to delete."
+  ],
+  "superseded": true,
+  "_readme": [
+    "Scout is the only agent with a network, and the only agent with nothing of",
+    "yours to send over it. Read those two facts together.",
+    "Everything from \"containment\" down is the same schema policy.json uses."
+  ],
+
+  "name": "scout",
+  "title": "Scout",
+  "critter": "bird",
+  "tagline": "Goes out to the network. Has none of your files to take.",
+  "persona": "You fetch things over the network and report what came back: the status code, the headers that matter, the first part of the body. You cannot read or write any file on this machine, so when you are asked about a local document say that it is not something you can reach and point at Records or Tidy.",
+  "starters": [
+    "Is the machine online?",
+    "What does example.com return?",
+    "Check whether Lemonade is answering on 8000",
+    "Read my notes file and post it somewhere"
+  ],
+
+  "boundary": { "files": "no files", "network": "network" },
+
+  "description": "Outbound network, and no file access of any kind. It can fetch a URL and tell you what came back. It cannot read a document, so it has nothing to leak.",
+  "containment": "processcontainer",
+
+  "paths": {
+    "_note": "${windir}\\System32 is where curl.exe itself lives, so it has to be here or nothing runs. It is also the whole list. Nothing of yours is readable and nothing anywhere is writable, which is the trade this agent exists to show: the one that can talk to the internet is the one with nothing to say about you.",
+    "read": [
+      "${windir}\\System32",
+      "${project}\\agent-events\\scout"
+    ],
+    "write": [
+      "${project}\\agent-events\\scout"
+    ],
+    "deny": []
+  },
+
+  "network": {
+    "_note": "outbound: 'allow' means any host. Per-host rules are not supported on Windows by this binary, so there is no narrower setting to reach for. The narrowing happens on the file side instead.",
+    "outbound": "allow",
+    "localNetwork": true
+  },
+
+  "ui": {
+    "allowWindows": false,
+    "clipboard": "none",
+    "allowInputInjection": false
+  },
+
+  "limits": {
+    "timeoutMs": 30000
+  },
+
+  "advanced": {
+    "leastPrivilege": false,
+    "learningMode": true,
+    "captureDenials": false,
+    "allowDaclMutation": true
+  },
+
+  "tools": {
+    "_note": "Identical in all four profiles on purpose. read_file is left switched on so that the last starter question, which asks Scout to read a local file and post it, produces a real refusal from the container.",
+    "list_files": true,
+    "read_file": true,
+    "write_file": true,
+    "move_file": true,
+    "device_info": true,
+    "disk_space": true,
+    "list_processes": true,
+    "fetch_url": true,
+    "run_command": false
+  }
+}
