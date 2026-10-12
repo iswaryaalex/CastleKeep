@@ -112,7 +112,14 @@ body{overflow:auto; display:grid; place-items:start center; min-height:100vh;
   border-radius:9px}
 .agentgroup > p{font-size:12px; color:var(--muted); margin-bottom:11px}
 
-.nav{display:flex; gap:10px; align-items:center; margin-top:22px}
+/* Sticky to the viewport bottom. Step 3 pre-selects all four personas and
+   expands a face-picker under each, which on a 768px laptop pushes Continue
+   ~1600px down - and show() scrolls to the top on arrival, so the button was
+   simply never on screen. Pinning the nav keeps it reachable at any height. */
+.nav{display:flex; gap:10px; align-items:center; margin-top:22px;
+  position:sticky; bottom:0; background:var(--surface);
+  padding:14px 0 2px; margin-bottom:-2px;
+  box-shadow:0 -1px 0 var(--border), 0 -14px 16px -14px var(--surface)}
 .b{height:38px; padding:0 18px; border-radius:10px; font-size:13px;
   font-weight:700; cursor:pointer; border:1px solid var(--border2);
   background:var(--surface); color:var(--ink2); font-family:var(--sans)}
