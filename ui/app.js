@@ -1,5 +1,5 @@
 /*
- * CastleKeep UI.
+ * Sanctum UI.
  *
  * One rule runs through this file: nothing here decides anything. Every tier,
  * every capability, every refusal on screen came from the host - from
@@ -47,7 +47,7 @@ const history = () => (S.histories[S.agent] = S.histories[S.agent] || []);
 /* The face of whichever agent is selected. Each one wears a different animal,
  * chosen during setup, so "which agent am I talking to" is answerable from the
  * corner of your eye rather than by reading a title. The dragon stays on as
- * the app's own mark in the title bar - it is CastleKeep, not an agent. */
+ * the app's own mark in the title bar - it is Sanctum, not an agent. */
 function critterOf(agentId) {
   const agents = (S.state && S.state.agents) || [];
   const rec = agents.find((a) => a.id === agentId);
@@ -58,9 +58,76 @@ function faceOf(agentId, state) {
   return critterSvg(critterOf(agentId), state || "idle");
 }
 
+/* The Sanctum logo: a circle of five cute animals (fox, cat, owl, bunny,
+   axolotl) arranged around a ring, each holding a small torch flame.
+   Drawn as a compact 28×28 SVG so it reads as a mark at small sizes. */
+const SANCTUM_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28">
+  <!-- outer ring -->
+  <circle cx="14" cy="14" r="13" fill="none" stroke="var(--brand)" stroke-width="1.5"/>
+  <!-- inner glow -->
+  <circle cx="14" cy="14" r="7" fill="var(--brand-soft)" stroke="var(--brand-line)" stroke-width="1"/>
+  <!-- five animal heads spaced evenly (72° apart), each at r=9.5 from center -->
+  <!-- fox  @ 270°: 14,4.5 -->
+  <g transform="translate(14,4.5)">
+    <circle r="2.6" fill="var(--brand-ink)" opacity=".85"/>
+    <!-- ears -->
+    <polygon points="-1.8,-2.6 0,-4.2 0.6,-2.2" fill="var(--brand-ink)"/>
+    <polygon points="1.8,-2.6 0,-4.2 -0.6,-2.2" fill="var(--brand-ink)"/>
+    <!-- eyes -->
+    <circle cx="-0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <circle cx="0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <!-- torch flame -->
+    <ellipse cx="0" cy="5.4" rx="0.9" ry="1.3" fill="var(--brand)" opacity=".9"/>
+    <rect x="-0.35" y="3.6" width="0.7" height="1.9" rx="0.35" fill="var(--brand-ink)" opacity=".6"/>
+  </g>
+  <!-- cat  @ 342°: 23.0,12.1 -->
+  <g transform="translate(23.0,12.1)">
+    <circle r="2.6" fill="var(--brand-ink)" opacity=".85"/>
+    <polygon points="-1.8,-2.6 0,-4.2 0.6,-2.2" fill="var(--brand-ink)"/>
+    <polygon points="1.8,-2.6 0,-4.2 -0.6,-2.2" fill="var(--brand-ink)"/>
+    <circle cx="-0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <circle cx="0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <ellipse cx="0" cy="5.4" rx="0.9" ry="1.3" fill="var(--brand)" opacity=".9"/>
+    <rect x="-0.35" y="3.6" width="0.7" height="1.9" rx="0.35" fill="var(--brand-ink)" opacity=".6"/>
+  </g>
+  <!-- owl  @ 54°:  19.6,21.3 -->
+  <g transform="translate(19.6,21.3)">
+    <circle r="2.6" fill="var(--brand-ink)" opacity=".85"/>
+    <!-- owl: two big round eyes instead of ears -->
+    <circle cx="-1" cy="-0.3" r="1" fill="var(--brand-soft)"/>
+    <circle cx="1" cy="-0.3" r="1" fill="var(--brand-soft)"/>
+    <circle cx="-1" cy="-0.3" r="0.45" fill="var(--brand-ink)" opacity=".7"/>
+    <circle cx="1" cy="-0.3" r="0.45" fill="var(--brand-ink)" opacity=".7"/>
+    <ellipse cx="0" cy="5.4" rx="0.9" ry="1.3" fill="var(--brand)" opacity=".9"/>
+    <rect x="-0.35" y="3.6" width="0.7" height="1.9" rx="0.35" fill="var(--brand-ink)" opacity=".6"/>
+  </g>
+  <!-- bunny @ 126°: 8.4,21.3 -->
+  <g transform="translate(8.4,21.3)">
+    <circle r="2.6" fill="var(--brand-ink)" opacity=".85"/>
+    <!-- bunny: tall thin ears -->
+    <ellipse cx="-1.1" cy="-3.8" rx="0.55" ry="1.6" fill="var(--brand-ink)"/>
+    <ellipse cx="1.1" cy="-3.8" rx="0.55" ry="1.6" fill="var(--brand-ink)"/>
+    <circle cx="-0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <circle cx="0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <ellipse cx="0" cy="5.4" rx="0.9" ry="1.3" fill="var(--brand)" opacity=".9"/>
+    <rect x="-0.35" y="3.6" width="0.7" height="1.9" rx="0.35" fill="var(--brand-ink)" opacity=".6"/>
+  </g>
+  <!-- axolotl @ 198°: 5.0,12.1 -->
+  <g transform="translate(5.0,12.1)">
+    <circle r="2.6" fill="var(--brand-ink)" opacity=".85"/>
+    <!-- axolotl: gill fronds -->
+    <path d="M-2.2,-1.8 Q-3.8,-3.2 -2.6,-4.2" stroke="var(--brand-ink)" stroke-width="0.7" fill="none"/>
+    <path d="M2.2,-1.8 Q3.8,-3.2 2.6,-4.2" stroke="var(--brand-ink)" stroke-width="0.7" fill="none"/>
+    <circle cx="-0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <circle cx="0.9" cy="-0.4" r="0.45" fill="var(--brand-soft)"/>
+    <ellipse cx="0" cy="5.4" rx="0.9" ry="1.3" fill="var(--brand)" opacity=".9"/>
+    <rect x="-0.35" y="3.6" width="0.7" height="1.9" rx="0.35" fill="var(--brand-ink)" opacity=".6"/>
+  </g>
+</svg>`;
+
 function setDragon(state) {
   const brand = $("brandDragon");
-  if (brand) brand.innerHTML = dragonSvg(state);
+  if (brand) brand.innerHTML = SANCTUM_LOGO;
   const mine = faceOf(S.agent, state);
   ["chatDragon", "emptyDragon"].forEach((id) => {
     const n = $(id);
@@ -86,6 +153,12 @@ function showTab(name) {
   document.querySelectorAll(".nav").forEach((b) =>
     b.classList.toggle("on", b.dataset.tab === name));
   location.hash = name;
+  // Memory draws from the basecamp poll; refresh it once on entry so an
+  // opened tab is current rather than up to one tick stale.
+  if (name === "memory") {
+    renderMemory();
+    if (typeof loadKeeper === "function") loadKeeper().then(renderMemory);
+  }
 }
 
 document.querySelectorAll(".nav").forEach((b) =>
@@ -94,6 +167,50 @@ document.body.addEventListener("click", (e) => {
   const g = e.target.closest("[data-goto]");
   if (g) showTab(g.dataset.goto);
 });
+
+/* Memory is a read-only window on what the always-on agent has collected -
+ * the merged inbox, drafts and calendar it keeps in mailbox\. It reuses the
+ * basecamp poll (K.data) so opening the tab costs nothing, and refreshes it
+ * once on entry so a freshly-opened tab is not a tick stale. */
+function renderMemory() {
+  const d = (typeof K !== "undefined" && K.data) || {};
+  const inbox = d.inbox || [];
+  const drafts = d.drafts || [];
+  const cal = d.calendar || [];
+
+  const mail = $("memMailbox");
+  if (mail) {
+    mail.innerHTML = "";
+    const rows = [
+      ["In the inbox", String(inbox.length)],
+      ["Drafts waiting", String(drafts.length)],
+      ["Days on the calendar", String(cal.length)],
+    ];
+    for (const [k, v] of rows) {
+      const row = el("div", "row");
+      row.appendChild(el("b", null, k));
+      row.appendChild(el("span", null, v));
+      mail.appendChild(row);
+    }
+    if (!inbox.length && !drafts.length)
+      mail.appendChild(el("p", "muted",
+        "Nothing collected yet. As agents produce invites and drafts, the " +
+        "always-on agent merges them here."));
+  }
+
+  const cbox = $("memCalendar");
+  if (cbox) {
+    cbox.innerHTML = "";
+    const flat = flattenCalendar(cal).slice(0, 8);
+    if (!flat.length) cbox.appendChild(el("p", "muted", "No upcoming events."));
+    for (const ev of flat) {
+      const row = el("div", "row");
+      row.appendChild(el("b", null, ev.day + "  " + ev.when));
+      row.appendChild(el("span", null, ev.title));
+      cbox.appendChild(row);
+    }
+  }
+}
 
 /* ====================================================================== */
 /* http                                                                    */
@@ -190,35 +307,26 @@ async function switchAgent(id) {
   renderTranscript();
 }
 
+/* Agents are shown in the main panel persona strip, not in the sidebar.
+   The sidebar just holds the always-on (base) agent card at the bottom. */
 function renderAgentNav() {
-  const nav = $("agentNav");
-  const agents = (S.state.agents || []).filter((a) => a.enabled);
-  nav.innerHTML = "";
-  // With one agent there is nothing to switch between, and a rail group
-  // containing a single permanently-selected button is just noise.
-  nav.parentElement.querySelectorAll(".rail-label")[1].classList
-    .toggle("hidden", agents.length < 2);
-  if (agents.length < 2) return;
-  // Personas first, base agent last under its own heading. The base agent is
-  // reachable here because its POLICY has to be editable - it is the one file
-  // in the app with reach across every other agent - but it is listed apart
-  // because it is not something you take turns talking to.
-  const order = agents.filter((a) => a.role !== "base")
-    .concat(agents.filter((a) => a.role === "base"));
-  let railed = false;
-  for (const a of order) {
-    if (a.role === "base" && !railed) {
-      railed = true;
-      nav.appendChild(el("div", "rail-label", "Always on"));
-    }
-    const b = el("button", "nav agent" + (a.id === S.agent ? " on" : ""));
-    b.appendChild(faceNode(a.id, a.id === S.agent ? "happy" : "idle"));
-    b.appendChild(document.createTextNode(
-      a.role === "base" ? baseName() : a.label));
-    b.title = a.blurb;
-    b.addEventListener("click", () => switchAgent(a.id));
-    nav.appendChild(b);
-  }
+  const slot = $("alwaysOnSlot");
+  if (!slot) return;
+  slot.innerHTML = "";
+  const base = (S.state.agents || []).find((a) => a.role === "base" && a.enabled);
+  if (!base) return;
+
+  const sep = el("div", "rail-sep");
+  const label = el("div", "rail-label rail-always", "Always on");
+  const b = el("button",
+    "nav agent always-on" + (base.id === S.agent ? " on" : ""));
+  b.appendChild(faceNode(base.id, "idle"));
+  b.appendChild(document.createTextNode(baseName()));
+  b.title = base.blurb;
+  b.addEventListener("click", () => switchAgent(base.id));
+
+  slot.appendChild(label);
+  slot.appendChild(b);
 }
 
 function faceNode(agentId, state) {
@@ -330,10 +438,12 @@ function renderChrome() {
   const rec = agentRec();
   const name = prof.agentName || "Assistant";
   const here = rec ? (rec.role === "base" ? name : rec.label) : name;
-  document.querySelector(".brand-name").textContent = name;
+  // The brand is the app's own corner: it is Sanctum, not the agent you are
+  // talking to. The agent name lives in the sub-line and in the chat title.
+  document.querySelector(".brand-name").textContent = "Sanctum";
   document.querySelector(".brand-sub").textContent =
     rec ? rec.label.toLowerCase() : "local assistant";
-  document.title = name + " - CastleKeep";
+  document.title = name + " - Sanctum";
 
   $("chatTitle").textContent = here;
   $("chatSub").textContent = rec
@@ -348,56 +458,119 @@ function renderChrome() {
   if ($("transcript").querySelector(".empty")) renderEmptyState();
 }
 
-/* ---------------------------------------------------------------- mission */
+/* --------------------------------------------------------- sandbox status */
 
-function policySummary(p) {
-  const n = (a) => (a && a.length) || 0;
+/* The structured status, one row per control, as the reference mock shows:
+ * an icon, a label, a plain-language line, and a chip that says whether the
+ * host ENFORCES it. "status" is one of ok (green, enforced/blocked-as-asked),
+ * allow (green, deliberately open), or off (neutral). The chip word is chosen
+ * to read true in a room: a read grant that is locked down says "Blocked",
+ * outbound that is open says "Allowed". */
+function sandboxStatus(p) {
   const paths = p.paths || {};
   const net = p.network || {};
-
-  /* Report what is ENFORCED, not what was asked for. If dialect negotiation
-   * came back "none" the network block never reaches wxc-exec, and printing
-   * "denied" here because policy.json says "deny" would be a lie on the one
-   * line most likely to be read aloud in a room. */
+  const ui = p.ui || {};
+  const n = (a) => (a && a.length) || 0;
   const netDead = S.state && S.state.dialect === "none";
-  const outbound = netDead
-    ? "not enforced on this host"
-    : (net.outbound === "allow" ? "allowed" : "denied");
+
+  const readable = n(paths.read) > 0;
+  const writable = n(paths.write) > 0;
+  const outOpen = net.outbound === "allow";
+  const toolsOff = Object.entries(p.tools || {})
+    .filter(([, on]) => !on).map(([k]) => k);
 
   return [
-    ["Containment", p.containment || "processcontainer"],
-    ["Readable", n(paths.read) + " path" + (n(paths.read) === 1 ? "" : "s")],
-    ["Writable", n(paths.write) + " path" + (n(paths.write) === 1 ? "" : "s")],
-    ["Outbound", outbound],
-    ["Local network", netDead ? "not enforced on this host"
-                              : (net.localNetwork ? "allowed" : "denied")],
-    ["Windows/UI", (p.ui || {}).allowWindows ? "allowed" : "blocked"],
-    ["Timeout", Math.round(((p.limits || {}).timeoutMs || 30000) / 1000) + "s"],
+    { ic: "cube", label: "Containment",
+      sub: "Running in an isolated container",
+      chip: "Enforced", status: "ok" },
+    { ic: "folder", label: "Readable",
+      sub: readable ? n(paths.read) + " path" + (n(paths.read) === 1 ? "" : "s") + " granted"
+                    : "No local file read access",
+      chip: readable ? "Scoped" : "Blocked", status: readable ? "allow" : "ok" },
+    { ic: "pencil", label: "Writable",
+      sub: writable ? n(paths.write) + " path" + (n(paths.write) === 1 ? "" : "s") + " granted"
+                    : "No local file write access",
+      chip: writable ? "Scoped" : "Blocked", status: writable ? "allow" : "ok" },
+    { ic: "globe", label: "Outbound",
+      sub: netDead ? "Not enforced on this host"
+                   : (outOpen ? "Network calls permitted" : "No outbound network"),
+      chip: netDead ? "n/a" : (outOpen ? "Allowed" : "Blocked"),
+      status: netDead ? "off" : (outOpen ? "allow" : "ok") },
+    { ic: "network", label: "Local network",
+      sub: netDead ? "Not enforced on this host"
+                   : (net.localNetwork ? "Local network reachable" : "No local network access"),
+      chip: netDead ? "n/a" : (net.localNetwork ? "Allowed" : "Blocked"),
+      status: netDead ? "off" : (net.localNetwork ? "allow" : "ok") },
+    { ic: "window", label: "Windows / UI",
+      sub: ui.allowWindows ? "Desktop interaction permitted" : "No UI or desktop interaction",
+      chip: ui.allowWindows ? "Allowed" : "Blocked",
+      status: ui.allowWindows ? "allow" : "ok" },
+    { ic: "clock", label: "Timeout",
+      sub: "Max " + Math.round(((p.limits || {}).timeoutMs || 30000) / 1000) +
+           "s per request",
+      chip: Math.round(((p.limits || {}).timeoutMs || 30000) / 1000) + "s", status: "off" },
+    { ic: "tools", label: "Tools off",
+      sub: toolsOff.length ? toolsOff.join(", ") : "Every tool in this policy is on",
+      chip: toolsOff.length ? "Disabled" : "All on",
+      status: toolsOff.length ? "ok" : "allow" },
   ];
+}
+
+const SBX_IC = {
+  cube:    "M12 2l9 5v10l-9 5-9-5V7zM3 7l9 5 9-5M12 12v10",
+  folder:  "M3 6h6l2 2h10v11H3z",
+  pencil:  "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
+  globe:   "M12 2a10 10 0 100 20 10 10 0 000-20zM2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20",
+  network: "M6 7a2 2 0 100-4 2 2 0 000 4zM18 7a2 2 0 100-4 2 2 0 000 4zM12 21a2 2 0 100-4 2 2 0 000 4zM6 5h12M6 5l6 12M18 5l-6 12",
+  window:  "M3 4h18v16H3zM3 9h18M7 6.5h.01M10 6.5h.01",
+  clock:   "M12 2a10 10 0 100 20 10 10 0 000-20zM12 7v5l3 2",
+  tools:   "M14 7a3 3 0 00-4 4l-6 6 2 2 6-6a3 3 0 004-4l-2 2-2-2z",
+};
+
+function sbxIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "sbx-ic");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", SBX_IC[name] || SBX_IC.cube);
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linejoin", "round");
+  path.setAttribute("stroke-linecap", "round");
+  svg.appendChild(path);
+  return svg;
 }
 
 function renderMission() {
   const rec = agentRec() || {};
   const mail = rec.sidePane === "mailbox";
-  $("sideTitle").textContent = mail ? "Mailbox" : "Mission";
+  $("sideTitle").textContent = mail ? "Mailbox" : "Sandbox Status";
+  if ($("sbxOn")) $("sbxOn").classList.toggle("hidden", mail);
   $("mailboxView").classList.toggle("hidden", !mail);
   $("missionView").classList.toggle("hidden", mail);
 
-  const box = $("missionPolicy");
-  box.innerHTML = "";
   const p = S.state.policy || {};
-  for (const [k, v] of policySummary(p)) {
-    const row = el("div", "row");
-    row.appendChild(el("b", null, k));
-    row.appendChild(el("span", null, v));
-    box.appendChild(row);
-  }
-  const off = Object.entries(p.tools || {}).filter(([, on]) => !on).map(([n]) => n);
-  if (off.length) {
-    const row = el("div", "row");
-    row.appendChild(el("b", null, "Tools off"));
-    row.appendChild(el("span", null, off.join(", ")));
-    box.appendChild(row);
+  const here = rec.role === "base" ? baseName() : (rec.label || "this agent");
+  if ($("sbxSub"))
+    $("sbxSub").textContent =
+      "What " + here + " may touch, enforced on every tool call.";
+
+  const box = $("sbxRows");
+  if (box) {
+    box.innerHTML = "";
+    for (const r of sandboxStatus(p)) {
+      const row = el("div", "sbx-row");
+      const icw = el("span", "sbx-icw status-" + r.status);
+      icw.appendChild(sbxIcon(r.ic));
+      row.appendChild(icw);
+      const txt = el("div", "sbx-txt");
+      txt.appendChild(el("div", "sbx-label", r.label));
+      txt.appendChild(el("div", "sbx-sub", r.sub));
+      row.appendChild(txt);
+      row.appendChild(el("span", "sbx-chip chip-" + r.status, r.chip));
+      box.appendChild(row);
+    }
   }
   renderMissionRuns(S.state.runs || []);
 }
@@ -413,10 +586,144 @@ function renderMissionRuns(runs) {
     const row = el("div", "r");
     row.appendChild(outcomeChip(r.outcome));
     row.appendChild(el("span", null, r.tool || r.label || "run"));
+
+    // A policy block is the one outcome you can do something about from here.
+    // Offer the diff inline rather than making somebody reconstruct which path
+    // was refused and hand-edit the policy file to add it.
+    const fix = r.outcome === "blocked" ? suggestFix(r) : null;
+    if (fix) {
+      const b = el("button", "fixbtn", "Fix →");
+      b.title = "Show which grant was missing and add it";
+      box.appendChild(row);
+      const panel = el("div", "denial-panel hidden");
+      b.addEventListener("click", () => {
+        const open = !panel.classList.contains("hidden");
+        panel.classList.toggle("hidden", open);
+        b.classList.toggle("on", !open);
+        if (!open && !panel.dataset.built) {
+          renderDenialDiff(fix, panel, b);
+          panel.dataset.built = "1";
+        }
+      });
+      row.appendChild(b);
+      box.appendChild(panel);
+      continue;
+    }
+
     const t = el("span", "mono right", r.durationMs != null ? r.durationMs + " ms" : "");
     row.appendChild(t);
     box.appendChild(row);
   }
+}
+
+/* ---------------------------------------------------- denial -> policy fix */
+
+/* Turn a real Windows path back into the token a policy would use, longest
+ * match first so ${vault}\health beats a bare drive. Mirrors policy.expand on
+ * the server, but in reverse - we only ever offer a token the server can
+ * expand back to the same path. */
+function tokenisePath(abs) {
+  const ctx = (S.state && S.state.paths) || {};
+  // Longest value first: ${vault}\health must win over ${systemdrive}.
+  const entries = Object.entries(ctx)
+    .filter(([, v]) => typeof v === "string" && v.length > 2)
+    .sort((a, b) => b[1].length - a[1].length);
+  const low = abs.toLowerCase();
+  for (const [key, val] of entries) {
+    const v = String(val).toLowerCase().replace(/[\\/]+$/, "");
+    if (low === v || low.startsWith(v + "\\") || low.startsWith(v + "/")) {
+      const rest = abs.slice(val.replace(/[\\/]+$/, "").length);
+      return "${" + key + "}" + rest.replace(/\//g, "\\");
+    }
+  }
+  return abs; // no token matched; offer the literal path
+}
+
+/* What path was refused, and what read grant would let it through. Returns
+ * null when there is nothing actionable (no path in the arguments, or the
+ * path is already granted and the block was something else). */
+function suggestFix(run) {
+  const args = run.arguments || {};
+  // read_file/list_files use `path`; move_file a `source`; everything else we
+  // leave alone, because widening write or network from a one-click button is
+  // exactly the kind of thing that should go through the full policy editor.
+  const readTools = { read_file: "path", list_files: "path", read_record: "path",
+                      list_records: "path", search_records: "path" };
+  const field = readTools[run.tool];
+  if (!field) return null;
+  const abs = args[field] || args.path;
+  if (!abs || typeof abs !== "string") return null;
+
+  const token = tokenisePath(abs);
+  const pol = S.policy || S.state.policy || {};
+  const read = ((pol.paths || {}).read || []).slice();
+
+  // Already granted? Then the block was not a missing read path and this
+  // button would write a no-op. Say nothing rather than offer a fake fix.
+  const already = read.some((p) => p.toLowerCase() === token.toLowerCase());
+  if (already) return null;
+
+  return { run, abs, token, read, after: read.concat([token]) };
+}
+
+/* The inline before/after. Left is the policy's read list now, with the
+ * missing path absent; right is the same list with it added, highlighted. */
+function renderDenialDiff(fix, panel, btn) {
+  panel.innerHTML = "";
+
+  const head = el("div", "denial-head");
+  head.appendChild(el("b", null, "Denied path"));
+  head.appendChild(el("code", "denial-path", fix.abs));
+  panel.appendChild(head);
+
+  const cols = el("div", "diff-cols");
+
+  const now = el("div", "diff-col");
+  now.appendChild(el("div", "diff-h", "paths.read now"));
+  for (const p of fix.read) now.appendChild(el("code", "diff-line", p));
+  if (!fix.read.length) now.appendChild(el("code", "diff-line muted", "(empty)"));
+  cols.appendChild(now);
+
+  const next = el("div", "diff-col");
+  next.appendChild(el("div", "diff-h", "after the fix"));
+  for (const p of fix.read) next.appendChild(el("code", "diff-line", p));
+  next.appendChild(el("code", "diff-line diff-add", fix.token));
+  cols.appendChild(next);
+
+  panel.appendChild(cols);
+
+  const actions = el("div", "denial-actions");
+  const apply = el("button", "btn primary", "Apply fix");
+  apply.addEventListener("click", () => applyDenialFix(fix, apply, panel, btn));
+  actions.appendChild(apply);
+  const open = el("button", "btn ghost", "Open Sandbox settings");
+  open.addEventListener("click", () => showTab("policy"));
+  actions.appendChild(open);
+  panel.appendChild(actions);
+}
+
+/* Save the widened read list through the same /api/policy endpoint the editor
+ * uses, so it goes through the same lint before it is written. On success the
+ * next tool call picks it up - no restart, which is the whole point. */
+async function applyDenialFix(fix, btn, panel, toggleBtn) {
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  const next = JSON.parse(JSON.stringify(S.policy || S.state.policy || {}));
+  next.paths = next.paths || {};
+  next.paths.read = fix.after.slice();
+  const { ok, body } = await postJSON("/api/policy" + agentQ(), next);
+  if (!ok || body.saved === false) {
+    btn.disabled = false;
+    btn.textContent = "Apply fix";
+    const why = (body.lint || []).find((n) => n.level === "error");
+    toast("Could not save: " + (why ? why.message : "policy rejected"), true);
+    return;
+  }
+  S.dirty = false;
+  toast("Added " + fix.token + " to paths.read. The next run will use it.");
+  panel.classList.add("hidden");
+  if (toggleBtn) toggleBtn.classList.remove("on");
+  await hydrate();
 }
 
 /* ------------------------------------------------------------- mailbox */
@@ -512,7 +819,7 @@ function renderControl() {
   };
   add("Containment", probe.available ? (probe.tier || "unknown") : "none",
       probe.available ? (caps._tierLabel || "") : (probe.error || "wxc-exec not usable"));
-  add("Sandboxes spawned", String(runs.length), "since CastleKeep started");
+  add("Sandboxes spawned", String(runs.length), "since Sanctum started");
   add("Refused", String(refused.length), "host gates, policy blocks, bad configs");
   add("Network dialect", st.dialect || "?",
       st.dialect === "none" ? "neither dialect was accepted" : "negotiated with --dry-run");
@@ -523,7 +830,7 @@ function renderControl() {
   const feed = $("refusedFeed");
   feed.innerHTML = "";
   if (!refused.length) {
-    feed.appendChild(el("p", "muted", "Nothing refused yet. Ask Assistant to read something outside the granted paths."));
+    feed.appendChild(el("p", "muted", "Nothing refused yet. Ask an agent to read something outside its granted paths."));
   } else {
     for (const r of refused) {
       const item = el("div", "item " + (r.outcome || ""));
@@ -957,6 +1264,35 @@ function pathEditor(kind, capKey) {
   return wrap;
 }
 
+/* The agent picker in the Sandbox header. A plain <select> of every enabled
+ * agent - personas first, the always-on agent last under its own group - so
+ * you can edit any policy file from one place. Switching is a real agent
+ * switch (switchAgent), so the form, the file path and the live JSON all
+ * follow. */
+function renderPolicyAgentPick(rec) {
+  const sel = $("policyAgentPick");
+  if (!sel) return;
+  const agents = (S.state.agents || []).filter((a) => a.enabled);
+  const personas = agents.filter((a) => a.role !== "base");
+  const base = agents.filter((a) => a.role === "base");
+  sel.innerHTML = "";
+
+  const addOpt = (a) => {
+    const o = el("option", null,
+      a.role === "base" ? baseName() + " (always on)" : a.label);
+    o.value = a.id;
+    if (a.id === S.agent) o.selected = true;
+    sel.appendChild(o);
+  };
+  personas.forEach(addOpt);
+  base.forEach(addOpt);
+
+  sel.onchange = () => {
+    const id = sel.value;
+    if (id && id !== S.agent) switchAgent(id);
+  };
+}
+
 function renderPolicy() {
   const form = $("policyForm");
   const p = S.policy;
@@ -965,9 +1301,9 @@ function renderPolicy() {
 
   /* Say which agent and which file, loudly. With more than one policy on disk
    * the single most likely mistake in the room is editing the right form and
-   * saving it over the wrong file. */
-  $("policyAgent").textContent = rec ? rec.label : "";
-  $("policyAgent").className = "chip plain" + (rec ? "" : " hidden");
+   * saving it over the wrong file - so the agent picker lives right here, next
+   * to Save, rather than only in the chat rail. */
+  renderPolicyAgentPick(rec);
   $("policyFile").textContent = (S.state || {}).policyFile || "policy.json";
 
   /* presets */
@@ -1001,8 +1337,9 @@ function renderPolicy() {
     form.appendChild(pg);
   }
 
-  /* paths */
-  let g = el("div", "group");
+  /* paths - the main config, lifted onto a whiter card so it reads as the
+     primary thing on the page and the rest as secondary knobs around it. */
+  let g = el("div", "group group-main");
   g.appendChild(el("h3", null, "What the sandbox can see"));
   g.appendChild(el("p", "gsub",
     "Everything else is invisible. Use ${project}, ${workspace}, ${home}, " +
@@ -1311,12 +1648,12 @@ function renderRunTab() {
   const steps = [
     ["Start the model.",
      "lemonade-server serve",
-     "CastleKeep expects it at " + ((st.lemonade || {}).baseUrl || "") +
+     "Sanctum expects it at " + ((st.lemonade || {}).baseUrl || "") +
      ". Load " + ((st.lemonade || {}).model || "the model") + " before you ask Assistant anything."],
     ["Check what this machine can actually enforce.",
      "python verify.py",
      "Writes VERIFY-REPORT.md. Until the negative tests pass, do not describe this setup as contained."],
-    ["Start CastleKeep.",
+    ["Start Sanctum.",
      "python run.py",
      "Serves on 127.0.0.1 and opens a browser. No packages to install."],
     ["Edit the policy while it runs.",
@@ -1535,9 +1872,9 @@ function renderSettings() {
     "That split is not a shortcut. MXC has no long-running-daemon shape on " +
     "Windows ProcessContainer - the contained process has to exit inside its " +
     "timeout - so a supervisor outside, re-entering a one-shot per tool call, " +
-    "is the only honest arrangement. CastleKeep contains what the agent does, " +
+    "is the only honest arrangement. Sanctum contains what the agent does, " +
     "not what the agent is.",
-    "Policy is immutable once a container is provisioned. CastleKeep compiles " +
+    "Policy is immutable once a container is provisioned. Sanctum compiles " +
     "a fresh config from policy.json for every call, which is exactly why an " +
     "edit lands on the next one and never on the one already running.",
     "Nothing on screen claims a tier or a capability that the host did not " +
@@ -1657,6 +1994,7 @@ function drawKeeper() {
   drawKeeperNote(d);
   renderPost();
   renderCalFeed();
+  renderMemory();
   if (K.open) drawKeeperBody();
 }
 
@@ -1956,5 +2294,5 @@ hydrate().then(() => {
   }
   renderTranscript();
 }).catch((e) => {
-  toast("Could not reach the CastleKeep server: " + e.message, true);
+  toast("Could not reach the Sanctum server: " + e.message, true);
 });

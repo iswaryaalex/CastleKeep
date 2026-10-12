@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CastleKeep</title>
+<title>Sanctum</title>
 <!-- Before the stylesheet, deliberately. See the note in onboard.html. -->
 <script>
   try {
@@ -13,15 +13,15 @@
   } catch (e) {}
 </script>
 <link rel="stylesheet" href="/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><circle cx='11' cy='11' r='10' fill='%23F5CE3E'/><circle cx='11' cy='11' r='6' fill='%235C4B00'/><circle cx='11' cy='11' r='4' fill='%23F5CE3E'/><circle cx='11' cy='3' r='1.8' fill='%235C4B00'/><circle cx='18.6' cy='7' r='1.8' fill='%235C4B00'/><circle cx='18.6' cy='15' r='1.8' fill='%235C4B00'/><circle cx='11' cy='19' r='1.8' fill='%235C4B00'/><circle cx='3.4' cy='15' r='1.8' fill='%235C4B00'/><circle cx='3.4' cy='7' r='1.8' fill='%235C4B00'/></svg>">
 </head>
 <body>
 
 <header class="titlebar">
   <a class="brand" href="/" title="Back to the launch screen"
      style="text-decoration:none; color:inherit">
-    <span class="avatar" id="brandDragon"></span>
-    <span class="brand-name">CastleKeep</span>
+    <span class="sanctum-mark" id="brandDragon"></span>
+    <span class="brand-name">Sanctum</span>
     <span class="brand-sub">local assistant</span>
   </a>
   <div class="titlebar-right">
@@ -35,18 +35,22 @@
 <div class="shell">
 
   <nav class="rail">
-    <div class="rail-label">Workspace</div>
+    <div class="rail-label">Your space</div>
     <div class="rail-chip" id="hostChip">&hellip;</div>
+    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Agents</button>
+    <button class="nav" data-tab="memory"><i data-ic="mail"></i>Memory</button>
+    <button class="nav" data-tab="control"><i data-ic="panel"></i>Insights</button>
 
-    <div class="rail-label">Agents</div>
-    <div id="agentNav"></div>
+    <div class="rail-sep"></div>
 
-    <div class="rail-label">Views</div>
-    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Chat</button>
-    <button class="nav" data-tab="control"><i data-ic="panel"></i>Control Panel</button>
-    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Policy</button>
+    <div class="rail-label">Sandbox</div>
     <button class="nav" data-tab="run"><i data-ic="terminal"></i>Run</button>
+    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Sandbox</button>
     <button class="nav" data-tab="settings"><i data-ic="gear"></i>Settings</button>
+
+    <!-- always-on agent bubble rendered here by JS -->
+    <div id="alwaysOnSlot"></div>
+
     <div class="rail-foot">
       <div class="rail-label">This turn</div>
       <div class="rail-stat"><span id="statCalls">0</span><em>sandboxes spawned</em></div>
@@ -90,8 +94,9 @@
       </section>
 
       <aside class="pane side">
-        <div class="pane-head">
-          <h1 id="sideTitle">Mission</h1>
+        <div class="pane-head sbx-head">
+          <h1 id="sideTitle">Sandbox Status</h1>
+          <span class="sbx-on" id="sbxOn">ON</span>
         </div>
         <div class="scroll" id="missionScroll">
           <!-- The mailbox, shown only for agents whose side pane is the
@@ -114,13 +119,17 @@
             </div>
           </div>
           <div id="missionView">
-            <div class="card">
-              <div class="card-title">In force right now</div>
-              <div id="missionPolicy" class="mini"></div>
-              <button class="btn ghost full" data-goto="policy">Change the policy</button>
+            <p class="sbx-sub" id="sbxSub">Isolated environment with strict policies.</p>
+            <!-- Structured, icon-led status rows with Enforced/Blocked/Allowed
+                 chips. Built from the live policy by renderSandboxStatus(). -->
+            <div class="card sbx-card">
+              <div id="sbxRows" class="sbx-rows"></div>
             </div>
+            <button class="btn ghost full" data-goto="policy">Edit policy &nearr;</button>
             <div class="card">
               <div class="card-title">Sandbox activity</div>
+              <p class="card-sub">Every tool call, as it happens - allowed or
+                 refused by the policy above.</p>
               <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
             </div>
           </div>
@@ -129,11 +138,28 @@
     </div>
   </main>
 
+  <!-- ============================== MEMORY ============================== -->
+  <main class="tab" id="tab-memory">
+    <div class="scroll pad">
+      <h1 class="page">Memory</h1>
+      <p class="page-sub">What each agent knows — the files in their vaults,
+         and what they have handed to the always-on agent so far.</p>
+      <div class="card">
+        <div class="card-title">Mailbox &amp; drafts</div>
+        <div id="memMailbox" class="mini"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Calendar</div>
+        <div id="memCalendar" class="mini"></div>
+      </div>
+    </div>
+  </main>
+
   <!-- ========================== CONTROL PANEL ========================== -->
   <main class="tab" id="tab-control">
     <div class="scroll pad">
-      <h1 class="page">Control Panel</h1>
-      <p class="page-sub">Everything CastleKeep knows about this machine, and
+      <h1 class="page">Insights</h1>
+      <p class="page-sub">Everything Sanctum knows about this machine, and
          everything it has done since it started.</p>
 
       <div class="tiles" id="tiles"></div>
@@ -179,12 +205,16 @@
       <section class="pane">
         <div class="pane-head">
           <div>
-            <h1>Policy <span class="chip plain" id="policyAgent"></span></h1>
+            <h1>Sandbox</h1>
             <p class="sub">Editing <code id="policyFile">policy.json</code>.
                Fixed the moment a sandbox starts - an edit here reaches the next
                tool call, never one already running.</p>
           </div>
           <div class="right">
+            <label class="agentpick-wrap" title="Which agent's policy you are editing">
+              <span class="agentpick-lbl">Agent</span>
+              <select id="policyAgentPick" class="agentpick"></select>
+            </label>
             <button class="btn ghost" id="revertPolicy">Revert</button>
             <button class="btn primary" id="savePolicy">Save</button>
           </div>

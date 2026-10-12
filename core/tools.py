@@ -254,6 +254,38 @@ def _b_fetch_url(a, ctx=None):
     return cmd_line(_q(CURL % _windir()), "-sS", "--max-time", "10", "-L", _q(url))
 
 
+def _b_network_check(a, ctx=None):
+    """Reachability, latency and a rough download throughput estimate.
+
+    Deliberately NOT a polished speed-test number. Inside an AppContainer there
+    is no WMI, no raw socket and a hard per-leg time budget, so this reports what
+    a contained process can honestly measure: did the request leave the box, how
+    long DNS and the TCP connect took, and roughly how fast a fixed-size object
+    came down. Every byte of it travels over outbound - with network.outbound
+    set to 'deny' the whole thing is refused by the sandbox before curl ever
+    resolves the host, which is the point of the demo: the capability (this
+    tool) and the permission (the policy) are two separate knobs.
+
+    curl -w writes a single machine-readable line to stdout, so the model is
+    handed numbers rather than a progress bar. The size defaults to ~1MB, big
+    enough for a meaningful rate and small enough not to stall a laptop on
+    conference wifi; the caller may ask for more."""
+    mb = a.get("sizeMB")
+    try:
+        mb = max(0.1, min(10.0, float(mb)))
+    except (TypeError, ValueError):
+        mb = 1.0
+    nbytes = int(mb * 1024 * 1024)
+    curl = _q(CURL % _windir())
+    url = "https://speed.cloudflare.com/__down?bytes=%d" % nbytes
+    fmt = ("NETCHECK http=%{http_code} dns_s=%{time_namelookup} "
+           "connect_s=%{time_connect} ttfb_s=%{time_starttransfer} "
+           "total_s=%{time_total} bytes=%{size_download} "
+           "speed_bytes_per_s=%{speed_download}")
+    return cmd_line(curl, "-sS", "--max-time", "20", "-o", "NUL",
+                    "-w", _q(fmt + "\\n"), _q(url))
+
+
 def _b_run_command(a, ctx=None):
     return shell_cmd(a.get("command") or "")
 
@@ -831,6 +863,19 @@ CATALOGUE = [
           "required": ["url"]},
          _b_fetch_url, shell="curl", needs=["outbound network set to allow"],
          agent="*"),
+
+    Tool("network_check", "Measure this device's internet connection: DNS and "
+                          "connect latency, time to first byte, and rough "
+                          "download speed. Use this for 'is my wifi slow', "
+                          "'test my connection' or 'check upload/download "
+                          "speed'. Reports the raw curl timings; derive Mbps as "
+                          "speed_bytes_per_s * 8 / 1e6.",
+         {"properties": {"sizeMB": {"type": "number",
+                                    "description": "How much to download for the "
+                                    "speed estimate, in MB. Default 1, max 10."}},
+          "required": []},
+         _b_network_check, shell="curl", needs=["outbound network set to allow"],
+         agent=("computer-assist",)),
 
     Tool("run_command", "Run an arbitrary Windows command. Off by default.",
          {"properties": {"command": _str("The command line to run under cmd.exe.")},

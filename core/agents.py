@@ -155,6 +155,15 @@ them understand and fix their own Windows device.
 You can look at the machine itself - files, disk, processes - and you also \
 hold a set of saved r/techsupport threads, which are other people's opinions \
 and not facts about this machine. Check the machine before you quote a thread.
+
+When {user} asks about their internet connection - "is my wifi slow", "test my \
+connection", "check download speed" - use network_check. It reports DNS and \
+connect latency, time to first byte, and a download rate; turn \
+speed_bytes_per_s into Mbps by multiplying by 8 and dividing by a million. \
+network_check needs outbound network, so if it comes back refused, say plainly \
+that the connection test was blocked by the policy's network rule and that \
+{user} can allow outbound in the Sandbox tab - do not claim you have no way to \
+check.
 """)
 
 _CODING_PROMPT = _persona_prompt(
@@ -294,6 +303,11 @@ def _persona_presets(persona, data_folder, label, extra_read=(), extra_write=(),
 _ASSIST_DEVICE_RO = {
     "list_files": True, "read_file": True, "device_info": True,
     "disk_space": True, "list_processes": True,
+    # On in the catalogue, but useless until a preset also opens outbound -
+    # network_check is the one device tool whose SECOND gate is the network
+    # policy, not the tool switch. That gap is the demo: turning the tool on
+    # here does nothing until you also set network.outbound to allow.
+    "network_check": True,
     "write_file": False, "move_file": False, "run_command": False,
 }
 
@@ -377,12 +391,48 @@ CODING_PRESETS = _persona_presets("coding", "github", "Coding") + [
 # The computer assistant is the one persona that also touches the machine, so
 # its presets carry the device tools and the workspace on top of the shared
 # three. Same shapes, bigger surface.
+#
+# A fourth preset, "diagnostics", is appended: same device tools, but with
+# network.outbound set to allow. It exists for one demo. Under the first three
+# presets PC Assist CAN see network_check in its tool list and will try it when
+# asked to test the connection - and the sandbox refuses it, because outbound is
+# deny. The only thing the diagnostics preset changes is that one network line.
+# Nothing about the tool, the prompt or the agent is different; the policy on
+# disk is the whole difference between "I can't reach the network" and a real
+# speed reading. That is the cleanest version of the session's entire argument:
+# the capability is constant, the permission is the variable, and you can flip
+# it while the app runs and watch the very next call go through.
+_ASSIST_DEVICE_FULL = dict(_ASSIST_DEVICE_RO, write_file=True)
+
 ASSIST_PRESETS = _persona_presets(
     "pc-assist", "reddit", "Assistant",
     extra_read=["${workspace}"], extra_write=["${workspace}"],
     tools_ro=dict(_RECORD_TOOLS_RO, **_ASSIST_DEVICE_RO),
-    tools_full=dict(_RECORD_TOOLS_FULL, **dict(_ASSIST_DEVICE_RO,
-                                               write_file=True)))
+    tools_full=dict(_RECORD_TOOLS_FULL, **_ASSIST_DEVICE_FULL)) + [
+    {
+        "id": "diagnostics",
+        "label": "Diagnostics (online)",
+        "summary": "Everything the read-only desk can do, plus outbound network "
+                   "so it can actually test the connection - DNS, latency and "
+                   "download speed with network_check.",
+        "refuses": "Still every other agent's folder and the global mailbox. "
+                   "The only thing it adds over the read-only desk is the one "
+                   "network line - flip back and the same speed test is refused "
+                   "by the sandbox, not by the tool.",
+        "policy": _policy(
+            "pc-assist-diagnostics",
+            "The read-only device desk with outbound network opened, so "
+            "network_check can leave the box. This is the before/after preset: "
+            "it differs from the read-only desk in exactly one field, "
+            "network.outbound, and that one field is the difference between a "
+            "refused speed test and a real one.",
+            read=["${system32}", "${workspace}", "${vault}\\pc-assist\\reddit"],
+            write=["${workspace}",
+                   "${vault}\\pc-assist\\invites", "${vault}\\pc-assist\\outbox"],
+            outbound="allow",
+            tools=dict(_RECORD_TOOLS_FULL, **_ASSIST_DEVICE_FULL)),
+    },
+]
 
 
 # -- base presets -----------------------------------------------------------
@@ -568,7 +618,7 @@ REGISTRY = [
         "examples": [
             "Give this machine a quick check-up.",
             "How much disk space is left, and what is eating it?",
-            "What did I save about fans spinning up on battery?",
+            "Test my internet connection - download speed and latency.",
             "Try to read a file you are not allowed to read, so I can see what happens.",
         ],
         "systemTemplate": _ASSIST_PROMPT,
@@ -576,7 +626,7 @@ REGISTRY = [
                   "create_invite", "draft_message",
                   "list_files", "read_file", "write_file", "move_file",
                   "device_info", "disk_space", "list_processes", "fetch_url",
-                  "run_command"],
+                  "network_check", "run_command"],
         "policyFile": "policies/computer-assist.json",
         "presets": ASSIST_PRESETS,
         "sidePane": "mission",

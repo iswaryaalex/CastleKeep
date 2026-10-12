@@ -97,6 +97,7 @@ def main():
     url = "http://127.0.0.1:%d/" % port
     print("  Phase 1 walkthrough %sphase1" % url)
     print("  Launch your App     %s" % url)
+    print("  Set up / re-onboard %sonboard" % url)
     print("  Personal Assistant  %sapp" % url)
     print("  Ctrl-C to stop.")
     print("")
