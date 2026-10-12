@@ -11,7 +11,7 @@
     "_note": "Lemonade Server runs on the HOST and is never sandboxed. The agent loop talks to it directly. baseUrl is probed for both /api/v1 and /v1 style routes.",
     "baseUrl": "http://127.0.0.1:13305",
     "_model_note": "Must match a model Lemonade has INSTALLED, exactly. /api/v1/models is the installed list; ?show_all=true is the catalogue, and a name can be in the catalogue and still 404 because nobody pulled it. Use workshop\\models.py rather than typing a name from memory.",
-    "model": "Qwen3.5-2B-GGUF",
+    "model": "Qwen3.6-35B-A3B-GGUF",
     "temperature": 0.3,
     "maxTokens": 1536,
     "toolCallMode": "auto",
