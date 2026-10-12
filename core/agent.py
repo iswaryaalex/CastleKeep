@@ -256,7 +256,9 @@ class Agent:
             calls = []
             errored = False
 
-            for ev in app.lemonade.chat(messages, tools=schemas or None, stream=True):
+            for ev in app.lemonade.chat(messages, tools=schemas or None,
+                                        stream=True,
+                                        model=app.model_for(self.agent_id)):
                 kind = ev["type"]
                 if kind == "token":
                     assistant_text.append(ev["text"])

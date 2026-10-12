@@ -179,7 +179,7 @@ class Lemonade:
 
     # -- chat --------------------------------------------------------------
 
-    def chat(self, messages, tools=None, stream=True):
+    def chat(self, messages, tools=None, stream=True, model=None):
         """Yields events:
             {"type": "token",      "text": str}
             {"type": "thinking",   "text": str}
@@ -189,6 +189,12 @@ class Lemonade:
         Tool calls are negotiated: try the native `tools` parameter first, and
         if the server will not take it, fall back to asking the model for a
         JSON block in its text. Both paths produce the same event.
+
+        `model` overrides the configured model for this one call. Lemonade is a
+        router as much as a server: hand it a different model name per request
+        and it loads or swaps to that one, keeping several resident at once. The
+        agent loop uses this to give, say, the coding agent a bigger model than
+        the one that just reads disk space - the whole thing is one HTTP field.
         """
         use_native = self._native_ok
         if use_native is None:
@@ -197,7 +203,8 @@ class Lemonade:
         if tools and use_native:
             try:
                 got_any = False
-                for ev in self._chat_once(messages, tools=tools, stream=stream):
+                for ev in self._chat_once(messages, tools=tools, stream=stream,
+                                          model=model):
                     got_any = True
                     yield ev
                 if got_any:
@@ -210,7 +217,7 @@ class Lemonade:
                 self._native_ok = False
                 yield {"type": "notice",
                        "message": "This backend would not accept the tools "
-                                  "parameter, so CastleKeep switched to prompted "
+                                  "parameter, so Sanctum switched to prompted "
                                   "tool calls. Same tools, different wire format."}
 
         # Prompted mode (or no tools at all).
@@ -219,7 +226,7 @@ class Lemonade:
             msgs = _inject_tool_prompt(messages, tools)
         buf = []
         try:
-            for ev in self._chat_once(msgs, tools=None, stream=stream):
+            for ev in self._chat_once(msgs, tools=None, stream=stream, model=model):
                 if ev["type"] == "token":
                     buf.append(ev["text"])
                     continue
@@ -239,9 +246,9 @@ class Lemonade:
         elif text:
             yield {"type": "token", "text": text}
 
-    def _chat_once(self, messages, tools=None, stream=True):
+    def _chat_once(self, messages, tools=None, stream=True, model=None):
         payload = {
-            "model": self.model,
+            "model": model or self.model,
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,

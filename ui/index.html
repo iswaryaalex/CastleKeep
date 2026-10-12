@@ -316,12 +316,29 @@
       <div class="two">
         <div class="card">
           <div class="card-title">Model</div>
+          <p class="card-sub">The model every agent runs on, unless it has its
+             own override below. Lemonade loads the one you pick and warms it -
+             no restart.</p>
+          <div class="modelpick">
+            <select id="modelSelect" class="agentpick"></select>
+            <button class="btn primary" id="modelApply">Use this model</button>
+          </div>
+          <p class="hint" id="modelApplyHint"></p>
           <div id="modelCard" class="mini"></div>
         </div>
         <div class="card">
-          <div class="card-title">Executor</div>
-          <div id="exeCard" class="mini"></div>
+          <div class="card-title">Per-agent model <span class="chip info">router</span></div>
+          <p class="card-sub">Lemonade is a router: give an agent its own model
+             and it serves that one just for that agent. Point the coding agent
+             at a bigger model and the quick ones at a small fast model - the
+             model chip changes as you switch agents.</p>
+          <div id="agentModels" class="agentmodels"></div>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Executor</div>
+        <div id="exeCard" class="mini"></div>
       </div>
 
       <div class="card">

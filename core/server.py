@@ -246,6 +246,23 @@ class Handler(BaseHTTPRequestHandler):
             app.basecamp.stop()
             return self._json({"ok": True})
 
+        if path == "/api/model":
+            # Global model: writes config.json and warms the new one. The whole
+            # app follows, exactly like workshop\\models.py --pick but from the
+            # Settings tab.
+            res = app.set_model((self._body() or {}).get("model") or "")
+            return self._json(dict(res, warmup=app.warmup_state(),
+                                   lemonade=app.lemonade.health()),
+                              200 if res.get("ok") else 400)
+
+        if path == "/api/agent-model":
+            # Per-agent model override - the router demo. An empty model clears
+            # the override and the agent falls back to the global default.
+            body = self._body() or {}
+            res = app.set_agent_model(body.get("agent") or "",
+                                      body.get("model") or "")
+            return self._json(res, 200 if res.get("ok") else 400)
+
         if path == "/api/basecamp/sync":
             # "Check now". Forces a pass even if nothing in the vault has
             # changed, because the question being asked is usually "did my

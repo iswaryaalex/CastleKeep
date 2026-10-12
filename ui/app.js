@@ -410,6 +410,18 @@ function renderChrome() {
                "s, so the first message will not stall."
              : (lem.baseUrl || "") + (lem.routePrefix || ""));
 
+  /* The router, made visible. When the selected agent has its own model, the
+   * chip reports THAT model, not the global default - because that is the one
+   * Lemonade will actually serve this agent's next turn. The chip turns the
+   * brand colour so the override is obvious at a glance. */
+  const override = ((st.profile || {}).agentModels || {})[S.agent];
+  if (lem.reachable && lem.modelPresent && override && override !== lem.model) {
+    m.className = "chip warn";
+    m.textContent = override + "  (this agent)";
+    m.title = (agentRec() || {}).label + " is routed to " + override +
+              " - the rest of the app uses " + lem.model + ".";
+  }
+
   /* Keep polling while the weights load so the chip flips to ready on its
    * own. Nobody should have to refresh the page to find out. */
   if (warm.state === "warming" && !S.warmPoll) {
@@ -1806,9 +1818,75 @@ function warmLabel(w) {
   return "not started";
 }
 
+/* One row per agent: a face, a name, and a model dropdown that defaults to the
+ * global model. This is the router made tangible - set the coding agent to the
+ * 35B and watch the model chip change when you switch to it. */
+function renderAgentModels() {
+  const box = $("agentModels");
+  if (!box) return;
+  const st = S.state;
+  const overrides = ((st.profile || {}).agentModels) || {};
+  const agents = (st.agents || []).filter((a) => a.enabled);
+  const order = agents.filter((a) => a.role !== "base")
+    .concat(agents.filter((a) => a.role === "base"));
+  box.innerHTML = "";
+  for (const a of order) {
+    const row = el("div", "agentmodel-row");
+    const face = el("span", "face sm");
+    face.innerHTML = faceOf(a.id, "idle");
+    row.appendChild(face);
+    row.appendChild(el("span", "agentmodel-name",
+      a.role === "base" ? baseName() : a.label));
+    const sel = el("select", "agentpick");
+    fillModelSelect(sel, overrides[a.id] || "", true);
+    sel.addEventListener("change", async () => {
+      const { ok, body } = await postJSON("/api/agent-model",
+        { agent: a.id, model: sel.value });
+      if (!ok) { toast((body && body.error) || "Could not set model.", true); return; }
+      toast(sel.value
+        ? (a.role === "base" ? baseName() : a.label) + " now runs on " + sel.value
+        : (a.role === "base" ? baseName() : a.label) + " back to the default model.");
+      await hydrate();
+    });
+    row.appendChild(sel);
+    box.appendChild(row);
+  }
+}
+
+/* Chat-capable models only. Lemonade also serves Whisper (speech-to-text)
+ * builds, which will 404 the moment the agent loop sends them a chat payload -
+ * so they do not belong in a model picker for an agent. */
+function chatModels() {
+  const lem = (S.state || {}).lemonade || {};
+  return (lem.models || []).filter((m) => !/^whisper/i.test(m));
+}
+
+function fillModelSelect(sel, chosen, includeDefault) {
+  if (!sel) return;
+  sel.innerHTML = "";
+  if (includeDefault) {
+    const o = el("option", null, "Default (" + (((S.state || {}).lemonade || {}).model || "global") + ")");
+    o.value = "";
+    sel.appendChild(o);
+  }
+  for (const m of chatModels()) {
+    const o = el("option", null, m);
+    o.value = m;
+    if (m === chosen) o.selected = true;
+    sel.appendChild(o);
+  }
+  if (!chosen && includeDefault) sel.value = "";
+}
+
 function renderSettings() {
   const st = S.state;
   const lem = st.lemonade || {};
+
+  /* Global model picker. The select lists what Lemonade actually serves, so a
+     choice here cannot 404 at chat time. Applying writes config.json and warms
+     the new model, same path as workshop\\models.py --pick. */
+  fillModelSelect($("modelSelect"), lem.model, false);
+
   mini("modelCard", [
     ["Base URL", lem.baseUrl],
     ["Route prefix", lem.routePrefix || "-"],
@@ -1820,6 +1898,8 @@ function renderSettings() {
                    ((lem.suggestions || []).length
                     ? "  (closest: " + lem.suggestions.join(", ") + ")" : "")],
   ]);
+
+  renderAgentModels();
 
   const probe = st.probe || {};
   mini("exeCard", [
@@ -1897,6 +1977,23 @@ $("rescan").addEventListener("click", async () => {
   await hydrate();
   $("rescan").disabled = false;
   toast("Re-probed the host.");
+});
+
+$("modelApply").addEventListener("click", async () => {
+  const name = $("modelSelect").value;
+  if (!name) return;
+  const btn = $("modelApply");
+  btn.disabled = true;
+  $("modelApplyHint").textContent = "Pointing Lemonade at " + name + "…";
+  const { ok, body } = await postJSON("/api/model", { model: name });
+  btn.disabled = false;
+  if (!ok) {
+    $("modelApplyHint").textContent = (body && body.error) || "Could not switch model.";
+    return;
+  }
+  $("modelApplyHint").textContent = "Now on " + name + ". Warming it now.";
+  await hydrate();
+  toast("Model is now " + name + ".");
 });
 
 /* ====================================================================== */

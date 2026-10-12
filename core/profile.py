@@ -98,6 +98,12 @@ def normalise(profile):
         "critters": _critters(p, subs, personas),
         "connectors": _connectors(p.get("connectors")),
         "theme": p.get("theme") if p.get("theme") in THEMES else THEMES[0],
+        # Per-agent model overrides, kept for whatever agents still exist. Not
+        # validated against Lemonade here - that is a live question the app
+        # answers at set time; a name that stops being served just falls back
+        # to the global model at chat time, which is the safe direction.
+        "agentModels": {k: v for k, v in (p.get("agentModels") or {}).items()
+                        if k in known and isinstance(v, str) and v},
         # The chat never opens on the base agent: it runs in the background
         # and has a bubble of its own, and landing somebody in it would start
         # them at the end of the story.

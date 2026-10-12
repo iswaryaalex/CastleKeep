@@ -476,6 +476,22 @@ table.runs td.cmd{font-family:var(--mono); font-size:11px; color:var(--muted);
 .agentpick:hover{border-color:var(--brand-line)}
 .agentpick:focus{outline:none; border-color:var(--brand-dark);
   box-shadow:0 0 0 3px var(--brand-soft)}
+
+/* Settings model picker */
+.modelpick{display:flex; gap:9px; align-items:center; margin:4px 0 8px}
+.modelpick .agentpick{flex:1; min-width:0}
+.modelpick .btn{flex:0 0 auto}
+#modelApplyHint{font-size:11.5px; color:var(--muted); min-height:16px;
+  margin-bottom:10px}
+.agentmodels{display:flex; flex-direction:column; gap:8px; margin-top:4px}
+.agentmodel-row{display:flex; align-items:center; gap:10px}
+.agentmodel-row .face{flex:0 0 26px; width:26px; height:26px; border-radius:8px;
+  overflow:hidden; display:grid; place-items:center; background:var(--brand-soft)}
+.agentmodel-row .face svg{width:132%; height:132%; margin-top:6%}
+.agentmodel-name{flex:0 0 96px; font-size:12.5px; font-weight:600;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.agentmodel-row .agentpick{flex:1; min-width:0}
+
 .field{display:flex; align-items:center; gap:12px; padding:9px 0;
   border-bottom:1px solid var(--border)}
 .field:last-child{border-bottom:0}

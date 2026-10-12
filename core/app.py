@@ -207,6 +207,58 @@ class App:
         self._warmup_thread = None
         return True
 
+    def set_model(self, name):
+        """Point the whole app at a different installed model, from the UI.
+
+        Writes lemonade.model into config.json exactly as workshop\\models.py
+        --pick does, then lets refresh_config pick it up on the next poll and
+        warm it. Validated against what Lemonade actually serves, so the UI
+        cannot write a name that will 404 at chat time."""
+        h = self.lemonade.health()
+        served = h.get("models") or []
+        if name not in served:
+            return {"ok": False, "error": "Lemonade is not serving '%s'." % name,
+                    "models": served}
+        cfg = _load_json(self.config_path)
+        cfg.setdefault("lemonade", {})["model"] = name
+        _save_json(self.config_path, cfg)
+        # Force the reload path to fire even within the same poll tick.
+        self._config_mtime = None
+        self.refresh_config()
+        return {"ok": True, "model": name}
+
+    def set_agent_model(self, agent_id, name):
+        """Give one agent its own model, or clear the override (name falsy).
+
+        Stored in the profile, not config.json: it is a per-agent choice that
+        belongs with the other per-agent choices (its critter, its preset), and
+        the agent loop reads it through model_for() on every turn. This is the
+        router demo - switching agents can switch which model Lemonade serves,
+        with nothing changed but one field on one request."""
+        if not agents_mod.get(agent_id):
+            return {"ok": False, "error": "no such agent"}
+        if name:
+            served = (self.lemonade.health().get("models")) or []
+            if name not in served:
+                return {"ok": False,
+                        "error": "Lemonade is not serving '%s'." % name}
+        prof = dict(self.profile or {})
+        models = dict(prof.get("agentModels") or {})
+        if name:
+            models[agent_id] = name
+        else:
+            models.pop(agent_id, None)
+        prof["agentModels"] = models
+        self.profile = profile_mod.save(self.project_dir, prof)
+        return {"ok": True, "agentModels": self.profile.get("agentModels") or {}}
+
+    def model_for(self, agent_id):
+        """The model this agent should run on: its own override if set, else the
+        global default. None means 'use the Lemonade client's configured model'
+        so an agent with no override costs nothing extra."""
+        models = (self.profile or {}).get("agentModels") or {}
+        return models.get(agent_id) or None
+
     def refresh_config(self):
         """reload_config() plus the Lemonade re-check that has to follow it.
 
@@ -479,6 +531,17 @@ def rel(path, base):
 def _load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _save_json(path, obj):
+    """Atomic write, so a half-written config.json is never read as truncated
+    - it is read as 'not onboarded'-style garbage otherwise, and the model
+    setting is exactly the thing somebody is changing when they are impatient."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, path)
 
 
 def _mtime(path):
