@@ -1,4 +1,4 @@
-# CastleKeep
+# Sanctum
 
 A local AI assistant that can only do what you let it.
 
