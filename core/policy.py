@@ -33,11 +33,25 @@ class PolicyError(Exception):
 _VAR = re.compile(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
-def path_context(project_dir, workspace_dir):
+def path_context(project_dir, workspace_dir, mailbox_dir=None, vault_dir=None):
     env = os.environ
     return {
         "project": project_dir,
         "workspace": workspace_dir,
+        # The base agent's whole world: the merged, global view of mail and
+        # calendar. Kept out of ${workspace} on purpose: granting the workspace
+        # should not silently grant somebody's mail, and the two want different
+        # read/write shapes anyway.
+        "mailbox": mailbox_dir or os.path.join(project_dir, "mailbox"),
+        # One sealed folder per persona agent, under vault\<persona>\. Always
+        # the ROOT - policies name the leaf they mean in full, as in
+        # ${vault}\health\records. There is deliberately no ${vault_self}:
+        # a variable whose meaning depends on which agent is asking would make
+        # a policy file impossible to read on its own, and lint() and
+        # compile_config() would both have to learn about agents to resolve it.
+        # Tools that need "my own vault" get a plain path in ctx["agentVault"]
+        # instead - see Agent.call_tool.
+        "vault": vault_dir or os.path.join(project_dir, "vault"),
         "home": env.get("USERPROFILE") or os.path.expanduser("~"),
         "windir": env.get("WINDIR") or env.get("SystemRoot") or r"C:\Windows",
         "system32": os.path.join(env.get("WINDIR") or env.get("SystemRoot")

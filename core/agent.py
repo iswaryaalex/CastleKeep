@@ -14,34 +14,98 @@ contains what the agent *does*, not what the agent *is*.
 
 import json
 import os
+import re
 import time
 
+from . import agents as agents_mod
 from . import policy as policy_mod
 from . import tools as tools_mod
 
-SYSTEM = """You are {name}, the agent inside CastleKeep. The person in front of \
-you chose that name for you, so answer to it. You help them understand and fix \
-their own Windows device.
-
-How you work:
-- You run entirely on this machine. The model is served locally by Lemonade. \
-Nothing the person says goes to the internet.
-- You have tools. Every tool call runs inside a fresh, throwaway sandbox with \
-a security policy the person controls. You do not control that policy and you \
-cannot work around it.
-- If a tool comes back refused, say so plainly and say which rule stopped it. \
-Do not retry the same thing. Do not pretend you got the data. If the person \
-wants that access, tell them which knob in the Policy tab to change.
-
-How you answer:
-- Short. A sentence or two of plain prose, then the finding.
-- Give real numbers when you have them. Never invent one.
-- When you spot something worth fixing, say what you would do and ask before \
-doing it.
-"""
+_TAG = re.compile(r"<[^>]+>")
 
 
-def _fmt_result(run, tool_name, notes):
+def _plain(text):
+    """PowerShell serialises its streams as CLIXML when stderr is redirected,
+    so a refusal arrives wrapped in markup. The model does not need the markup,
+    and the 400-character budget below is far too small to spend on it - the
+    real message would be pushed off the end by the XML preamble."""
+    s = str(text or "")
+    if "CLIXML" not in s and "<Objs" not in s:
+        return s
+    s = _TAG.sub(" ", s.replace("#< CLIXML", ""))
+    # PowerShell escapes its own newlines in the serialised form.
+    s = s.replace("_x000D__x000A_", " ").replace("_x000A_", " ")
+    return " ".join(s.split())
+
+
+def _covered(path, grants):
+    p = os.path.normcase(os.path.normpath(path))
+    for g in grants:
+        g = os.path.normcase(os.path.normpath(g))
+        if p == g or p.startswith(g + os.sep):
+            return True
+    return False
+
+
+def _grant_diagnosis(tool, arguments, pol, ctx):
+    """Which grant was actually missing, in the policy's own words.
+
+    Windows will not tell you. PowerShell reports a refused write to
+    mailbox\\labels as "Access to the path 'C:\\Users' is denied", naming the
+    first directory it could not traverse rather than the one you asked for.
+    Handed that, a model confidently blames whichever path it can see in the
+    error and sends the user to change a rule that was never the problem.
+
+    This runs only after MXC has already refused. It explains the refusal; it
+    does not make it."""
+    if tool is None or tool.paths is None:
+        return ""
+    try:
+        want = tool.paths(arguments or {}, ctx)
+    except Exception:
+        return ""
+
+    p = policy_mod.normalise(pol)
+
+    def grants(kind):
+        out = []
+        for raw in p["paths"].get(kind) or []:
+            try:
+                out.append(policy_mod.expand(raw, ctx))
+            except policy_mod.PolicyError:
+                continue
+        return out
+
+    write = grants("write")
+    # A read-write grant implies read. compile_config drops the duplicate
+    # readonly entry, so the readable set has to be the union here too.
+    read = grants("read") + write
+
+    missing = []
+    for path in want.get("write") or []:
+        if not _covered(path, write):
+            missing.append(("write", path))
+    for path in want.get("read") or []:
+        if not _covered(path, read):
+            missing.append(("read", path))
+    if not missing:
+        return ""
+
+    lines = ["", "Which grant was missing:"]
+    for kind, path in missing:
+        lines.append("- No %s access to %s. The policy would need that path "
+                     "added to paths.%s." % (kind, path, kind))
+    lines.append("The policy currently grants write on: %s."
+                 % (", ".join(write) or "nothing"))
+    lines.append("Quote that exact path back to the user and tell them to add "
+                 "it in the Policy tab. You already have the path - do not ask "
+                 "them for it. Do NOT blame a path that is already granted: "
+                 "the error text from Windows usually names a parent directory "
+                 "rather than the path that was actually refused.")
+    return "\n".join(lines)
+
+
+def _fmt_result(run, tool_name, notes, diagnosis=""):
     """What the model sees after a tool call. Honest about refusals, because
     a model that thinks it got data will confabulate the rest of the turn."""
     outcome = run["outcome"]
@@ -52,10 +116,29 @@ def _fmt_result(run, tool_name, notes):
     if outcome == "blocked":
         return (
             "REFUSED BY POLICY. The sandbox started, the command ran, and the "
-            "security policy stopped it: %s. Detail: %s\n"
+            "security policy stopped it: %s. Detail: %s%s\n"
             "Tell the user this was blocked and which policy rule would need to "
             "change. Do not try the same path again."
-            % (run.get("reason"), (run.get("detail") or "")[:400])
+            % (run.get("reason"), _plain(run.get("detail"))[:400], diagnosis)
+        )
+
+    if outcome == "timeout":
+        # Deliberately NOT phrased as a refusal. Nothing was denied here, and
+        # a model told "REFUSED BY POLICY" learns to stop asking - which is
+        # the wrong lesson when the real answer is "that was too much work for
+        # one call". Partial output is included, because a tool that was
+        # stopped half way often produced something usable first.
+        partial = (run.get("stdout") or "").strip()
+        return (
+            "STOPPED ON TIME, NOT REFUSED. The sandbox started and the command "
+            "really ran. It was still running when the time limit expired, so "
+            "MXC stopped it. %s\n"
+            "Nothing was blocked and no grant is missing. Either ask for less "
+            "in one call - a narrower folder, fewer lines - or tell the user to "
+            "raise limits.timeoutMs in the Policy tab.%s"
+            % (run.get("reason") or "",
+               ("\nIt produced this much before it stopped:\n" + partial[:1500])
+               if partial else "")
         )
 
     if outcome == "refused-to-start":
@@ -68,13 +151,18 @@ def _fmt_result(run, tool_name, notes):
                (" (field: %s)" % run["offendingField"]) if run.get("offendingField") else "")
         )
 
-    tail = ((run.get("stderr") or "") + (run.get("stdout") or "")).strip()
-    return "The command failed (exit %s). %s" % (run.get("exitCode"), tail[:1500])
+    tail = _plain((run.get("stderr") or "") + (run.get("stdout") or "")).strip()
+    return "The command failed (exit %s). %s%s" % (
+        run.get("exitCode"), tail[:1500], diagnosis)
 
 
 class Agent:
-    def __init__(self, app):
+    def __init__(self, app, agent_id=None):
         self.app = app              # core.app.App
+        # Which subagent this is. Everything that used to be a module constant
+        # - the prompt, the tool set, the policy file - now hangs off this.
+        self.agent_id = agent_id or app.active_agent()
+        self.record = agents_mod.get(self.agent_id)
 
     # -- one tool call ----------------------------------------------------
 
@@ -85,15 +173,16 @@ class Agent:
         # Re-read the policy from disk for THIS call. Not cached, not
         # inherited from the start of the turn. This is what makes an edit in
         # the Policy tab land on the very next tool call.
-        pol = app.reload_policy()
+        pol = app.reload_policy(self.agent_id)
         gate = (pol.get("tools") or {})
-        tool = tools_mod.BY_NAME.get(name)
+        mine = {t.name: t for t in tools_mod.for_agent(self.agent_id)}
+        tool = mine.get(name)
 
         if tool is None:
             emit({"type": "tool_result", "name": name, "outcome": "unknown-tool",
                   "text": "No such tool."})
-            return "There is no tool called %r. Available: %s" % (
-                name, ", ".join(sorted(tools_mod.BY_NAME)))
+            return "There is no tool called %r available to %s. Available: %s" % (
+                name, self.record["label"], ", ".join(sorted(mine)))
 
         if not gate.get(name, not tool.danger):
             rec = {
@@ -113,13 +202,15 @@ class Agent:
                     "in the Policy tab." % rec["reason"])
 
         try:
-            command, tool = tools_mod.build_command(name, arguments)
+            command, tool = tools_mod.build_command(
+                name, arguments, app.tool_ctx(self.agent_id))
         except Exception as e:
             return "Could not build that command: %s" % e
 
         cfg, notes = app.compile_for(pol, command)
         emit({"type": "tool_call", "name": name, "arguments": arguments,
-              "command": command, "config": cfg, "notes": notes})
+              "command": command, "config": cfg, "notes": notes,
+              "agent": self.agent_id})
 
         run = app.mxc.execute(cfg, label=name,
                               timeout=(pol.get("limits") or {}).get("timeoutMs", 30000)
@@ -127,10 +218,17 @@ class Agent:
         run["arguments"] = arguments
         run["notes"] = notes
         run["tool"] = name
+        run["agent"] = self.agent_id
         app.record_run(run)
         emit({"type": "sandbox", "run": _public(run)})
 
-        text = _fmt_result(run, name, notes)
+        diagnosis = ""
+        if run["outcome"] in ("blocked", "failed"):
+            diagnosis = _grant_diagnosis(tool, arguments, pol,
+                                         app.tool_ctx(self.agent_id))
+            if diagnosis:
+                run["missingGrants"] = diagnosis
+        text = _fmt_result(run, name, notes, diagnosis)
         emit({"type": "tool_result", "name": name, "outcome": run["outcome"],
               "text": text[:4000]})
         return text
@@ -139,14 +237,12 @@ class Agent:
 
     def turn(self, user_text, history, emit):
         app = self.app
-        pol = app.reload_policy()
-        schemas = tools_mod.schemas(pol)
+        pol = app.reload_policy(self.agent_id)
+        schemas = tools_mod.schemas(pol, self.agent_id)
 
-        # .replace rather than .format, because the prompt below it is edited
-        # often and one stray brace in an example would turn a text edit into
-        # a KeyError at chat time.
-        system = SYSTEM.replace("{name}", app.assistant_name())
-        messages = [{"role": "system", "content": system + _policy_briefing(pol, app)}]
+        system = agents_mod.system_prompt(self.agent_id, app.profile)
+        messages = [{"role": "system",
+                     "content": system + _policy_briefing(pol, app, self.agent_id)}]
         messages += history
         messages.append({"role": "user", "content": user_text})
 
@@ -156,15 +252,19 @@ class Agent:
 
         while True:
             assistant_text = []
+            reasoning = []
             calls = []
             errored = False
 
-            for ev in app.lemonade.chat(messages, tools=schemas or None, stream=True):
+            for ev in app.lemonade.chat(messages, tools=schemas or None,
+                                        stream=True,
+                                        model=app.model_for(self.agent_id)):
                 kind = ev["type"]
                 if kind == "token":
                     assistant_text.append(ev["text"])
                     emit({"type": "token", "text": ev["text"]})
                 elif kind == "thinking":
+                    reasoning.append(ev["text"])
                     emit({"type": "thinking", "text": ev["text"]})
                 elif kind == "tool_calls":
                     calls = ev["calls"]
@@ -179,6 +279,25 @@ class Agent:
             text = "".join(assistant_text).strip()
             if errored:
                 break
+
+            # A reasoning model can finish a turn having written its entire
+            # answer into the reasoning channel and emitted no content at all.
+            # It is not a failure - the tools ran, the data came back, the
+            # model worked it out - but with nothing in `content` the chat
+            # window shows a blank reply underneath three successful sandbox
+            # runs, which reads as "the sandbox ate my answer". Showing the
+            # reasoning, labelled, is the honest repair: it is the model's own
+            # words about the data it really read.
+            #
+            # lemonade.py asks for reasoning to be off, so this should be rare.
+            # It is here because "should be" is doing a lot of work in that
+            # sentence - the kwarg is advisory and some builds ignore it.
+            if not text and not calls and reasoning:
+                text = ("".join(reasoning).strip() +
+                        "\n\n_(The model wrote that in its reasoning channel "
+                        "rather than its reply. Set lemonade.thinking in "
+                        "config.json if you want to see this happen.)_")
+
             if text:
                 final_text.append(text)
 
@@ -222,12 +341,13 @@ def _public(run):
     return out
 
 
-def _policy_briefing(pol, app):
+def _policy_briefing(pol, app, agent_id=None):
     """Tell the model what it can and cannot reach, in the model's own terms.
     This is not enforcement - MXC is enforcement - it just stops the model
     wasting turns on things that will certainly be refused."""
     p = policy_mod.normalise(pol)
     ctx = app.path_ctx()
+    mine = {t.name for t in tools_mod.for_agent(agent_id)}
 
     def show(kind):
         vals = p["paths"].get(kind) or []
@@ -247,8 +367,7 @@ def _policy_briefing(pol, app):
                  % (p["network"].get("outbound") or "deny"))
     lines.append("- Tool call timeout: %ss"
                  % int((p["limits"].get("timeoutMs") or 30000) / 1000))
-    off = [n for n, t in (p.get("tools") or {}).items()
-           if n in tools_mod.BY_NAME and not t]
+    off = [n for n, t in (p.get("tools") or {}).items() if n in mine and not t]
     if off:
         lines.append("- Switched off entirely: %s" % ", ".join(sorted(off)))
     lines.append("Anything not listed as readable is not readable. Do not "

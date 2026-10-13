@@ -7,11 +7,11 @@ loop runs on your machine. And every single thing the agent tries to *do* runs
 inside a throwaway Microsoft MXC sandbox built from a policy file you can edit
 while the app is running.
 
-The point of the exercise is the refusals. You will ask Assistant to read something
-it should not be able to read, and watch the sandbox stop it. Then you will
-change one line of policy, ask again, and watch it work. Nothing in this app
-simulates that. If the screen says a sandbox refused something, a sandbox
-refused something.
+The point of the exercise is the refusals. You will ask your agent to read
+something it should not be able to read - a file, or a thread in your private
+mail - and watch the sandbox stop it. Then you will change one line of policy,
+ask again, and watch it work. Nothing in this app simulates that. If the
+screen says a sandbox refused something, a sandbox refused something.
 
 Windows only. Python 3.9 or newer. No pip install. It is stdlib on purpose,
 so it survives conference wifi and a locked-down laptop.
@@ -26,7 +26,7 @@ You need two things on the box.
 
 The MXC executables are already here, in `bin\`, for x64 and arm64. CastleKeep
 invokes `bin\x64\wxc-exec.exe` and nothing outside this folder, so you can copy
-`castlekeep\` to another machine and it still runs. `bin\README.md` says what
+`sanctum\` to another machine and it still runs. `bin\README.md` says what
 each executable is and where they came from. To use a different build, point
 `mxc.binDir` or `mxc.exePath` in `config.json` at it, or set `MXC_BIN_DIR`.
 CastleKeep tells you at startup if it cannot find an executor.
@@ -92,6 +92,130 @@ The app itself is `/app` and the terminal walkthrough is `/phase1`.
 `--no-browser` and `--port` do what you expect. `python run.py --check` prints
 the host report and exits.
 
+## Setting up your agent
+
+The first time through, the launch screen sends you to `/onboard` instead of
+straight into the app. Five questions: your name; what to call your base agent
+and which animal it is; which of the four other agents to turn on and which
+animal each of them gets; three dummy accounts; and a starting policy for
+every agent.
+
+That last one is the point. You are told what each preset grants and what it
+will refuse, and you choose, **before** any agent has done anything. An agent
+you named and whose permissions you picked is one you argue with; an agent
+called Assistant is a product you assume somebody else secured.
+
+It writes `profile.json`, seeds `vault\` with each agent's sample data, and
+writes one policy file per agent under `policies\`. None of the three is in
+git - forty people clone the same repo, and the name you type is yours. A
+preset cannot grant anything the Policy tab could not; it is a starting point,
+not a privileged one. Settings has a reset, a theme picker, and the same
+presets later.
+
+The accounts step asks for a Gmail address, a Reddit username and a GitHub
+username. These create **local dummy accounts**: nothing authenticates
+anywhere, no password is asked for, no request leaves the machine. The names
+only decide what the sample data says.
+
+## The calendar is live; the mailbox is a snapshot
+
+Those two halves of a Google account need different things, and the split is
+not arbitrary:
+
+| | Source | Access | Credential | Refreshes |
+|---|---|---|---|---|
+| Calendar | secret `.ics` URL | read-only by construction | **none** | every 10 min, on every machine |
+| Mail | IMAP | read **and** write | app password | once, by the presenter |
+
+So the calendar can be genuinely live for forty people with nothing shipped
+that could be abused. Put the address in `config.json`:
+
+```json
+"calendar": {
+  "icsUrl": "https://calendar.google.com/calendar/ical/.../basic.ics",
+  "refreshMinutes": 10, "daysBack": 7, "daysAhead": 45
+}
+```
+
+Google Calendar → Settings → *your calendar* → **Secret address in iCal
+format**. Treat that URL as a password: anyone holding it can read the
+calendar. Rotate it when the workshop is over.
+
+With `icsUrl` set, the synthetic sample calendar is not laid down at all - a
+real calendar and an invented one in the same pane is worse than either alone.
+
+A refresh **never overwrites what an agent produced**. Every event records its
+source, and only events this feed owns are replaced. See `core\icsfeed.py`.
+
+## Mail that arrives during the session
+
+The inbox is a snapshot, but not a frozen one. Some messages ship with a
+`releaseAt`, wait in `mailbox\scheduled\`, and move into the inbox when
+their moment comes - measured from the moment you finished setup. The bubble's
+badge moves when they land.
+
+That delivery is host-side and the code says so loudly: it is the mail server,
+not the agent. What the agent may *read* is still `policies\base.json`,
+through a sandbox. See the header of `core\postman.py`.
+
+It is a timed release rather than a live mail poll, and that is deliberate.
+Forty laptops on one Gmail account lock it within minutes, shared live mail is
+shared mutable state, and an app password on every machine is the last thing
+you want in an app that spends its afternoon demonstrating prompt injection.
+A timed release needs no network, no credential and no conference wifi, and it
+fires identically on forty machines.
+
+A presenter can override the clock:
+
+```
+python workshop\deliver.py           what is still to come, and when
+python workshop\deliver.py --now     deliver the next one now
+```
+
+## Four agents, and one that is always on
+
+Each of the four **personas** is sealed into its own folder under `vault\`,
+and that folder is the entire world it has:
+
+| Agent | Reads | Writes |
+|---|---|---|
+| **Health** | `vault\health\records` - vitals, labs, medications, appointments | `invites`, `outbox` |
+| **Finance** | `vault\finance\ledger` - accounts, transactions, bills, budget | `invites`, `outbox` |
+| **PC Assist** | the device itself, plus `vault\pc-assist\reddit` | the workspace, `invites`, `outbox` |
+| **Coding** | `vault\coding\github` - repos, issues, PRs, notifications | `invites`, `outbox` |
+
+A persona cannot put anything on a calendar. The most it can do is write an
+invitation into its own `invites\` folder and stop.
+
+The **base agent** - the one you named - is what picks those up. Every twenty
+seconds it checks whether any agent's `invites\` or `outbox\` has changed, and
+if so spawns **one real sandbox** under `policies\base.json` to merge them
+into the global calendar and mail view in `mailbox\`. That view lives in the
+floating bubble in the corner, with a counter, and each item is tagged with
+the agent that produced it.
+
+The asymmetry is the whole exercise. The base agent can see across all four
+agents' outgoing folders and into none of their data - not one blood test, not
+one bank balance. Take one `invites` line out of its `paths.read` and that
+agent silently stops reaching the calendar, with the refusal reported in
+Windows' own words, on the next check, with no restart.
+
+Data-as-files is not a shortcut around doing it properly; it is the only shape
+that makes the lesson expressible. The sandbox cannot usefully reach the
+network for this - `hostLoopback` is only grantable on BaseContainer, and
+`verify.py` measures that a contained process cannot reach loopback on the
+tiers most machines get. On disk, "read my records but only write to invites"
+is one line of `paths.read` and one of `paths.write`, enforced by the same
+machinery that refuses a read of `C:\Users`. The full reasoning, including why
+pointing the room at live shared IMAP ends with a locked Google account, is at
+the top of `core\mailbox.py`, and the vault's version of it is at the top of
+`core\vault.py`.
+
+Each agent has its own prompt, its own tools and its own policy file.
+Switching between them - in the strip above the chat, or in the rail - swaps
+all three at once, and the Policy tab names the file it is editing so you can
+see it change.
+
 ## Phase 1, if you are running this as a workshop
 
 `http://127.0.0.1:7701/phase1` is a seven-step terminal walkthrough that
@@ -113,16 +237,21 @@ Point a demo at a real credential exactly once and you will understand why.
 
 ## The five tabs
 
-**Assistant** is the chat tab. Ask it what kind of machine this is, how
-much disk is free, what is eating memory. Each answer involves a real tool
-call, and each tool call spawns a real sandbox, and you can watch them arrive
-inline, with the command and the exact configuration that was sent.
+**Chat** is where you talk to whichever agent is selected - switch with the
+strip of faces above the transcript. Ask Health what your vitals have done
+this month, ask Coding what needs you on GitHub, ask PC Assist what is eating
+the disk. Each answer involves a real tool call, and each tool call spawns a
+real sandbox, and you can watch them arrive inline, with the command and the
+exact configuration that was sent. The base agent's bubble sits in the corner
+throughout, collecting whatever the others produce.
 
 **Control Panel** is the honest view: the tier this host actually gave you,
 which knobs it can enforce, every tool and what it needs, and a running list of
 everything that has been refused and by whom.
 
-**Policy** is the file. Edit paths, flip network off, switch tools on and off.
+**Policy** is the file - the selected agent's, named at the top of the
+tab. Edit paths, flip network off, switch tools on and off, or start again
+from one of the presets.
 Knobs this host cannot enforce are disabled with the reason attached, rather
 than silently doing nothing. Save, and the change lands on the agent's very
 next tool call. No restart, no reload. Each call re-reads the file from disk
@@ -130,10 +259,35 @@ and compiles a fresh sandbox configuration from it.
 
 **Run** is the terminal view, if you would rather watch it that way.
 
-**Settings** is the model and the executor.
+**Settings** is the model, the executor, the theme, and your setup -
+including a reset if somebody else needs the machine next.
 
-You can also just edit `policy.json` in a text editor. It is the same file, and
-it is commented. `COMPILED.md` explains what each field becomes on the wire.
+You can also just edit the files in `policies\` in a text editor. They are the
+same files the tab writes, and the root `policy.json` they are modelled on is
+commented. `COMPILED.md` explains what each field becomes on the wire.
+
+## If you want to read the code
+
+`CODE-TOUR.md` explains the whole codebase, from the first line that runs to
+the last pixel on the screen. It names the file and the function for every
+step, quotes the code, and says why each decision was made. It covers MXC from
+scratch, for readers who have never met it. Start there if you intend to
+change anything.
+
+It is written in ASD-STE100 Simplified Technical English: short sentences,
+active voice, one meaning per word.
+
+## If you would rather see it than read it
+
+`ARCHITECTURE.md` draws the whole system: the trust boundary, one tool call end
+to end, onboarding, what an agent actually is, where the data comes from, and
+the three kinds of refusal. The diagrams are Mermaid, which GitHub renders
+inline and VS Code renders with the *Markdown Preview Mermaid Support*
+extension.
+
+If you would rather not install anything, run the app and open
+**`/architecture`** - the same diagrams in plain HTML and CSS, no extension and
+no CDN. Settings links to it.
 
 ## Three ways to be told no
 
@@ -151,8 +305,8 @@ MXC refused the access. This is the real thing.
 rejected. Usually you asked for something this backend does not implement.
 The refusal names the offending field.
 
-Assistant is told the difference too, in plain language, along with an instruction
-not to go looking for a way around it.
+The agent is told the difference too, in plain language, along with an
+instruction not to go looking for a way around it.
 
 ## What this does not do
 

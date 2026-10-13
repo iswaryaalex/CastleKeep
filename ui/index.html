@@ -3,19 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CastleKeep</title>
-<link rel="stylesheet" href="/tokens.css">
+<title>Sanctum</title>
+<!-- Before the stylesheet, deliberately. See the note in onboard.html. -->
+<script>
+  try {
+    var t = localStorage.getItem("castlekeep-theme");
+    if (["parchment", "moonlit", "sakura"].indexOf(t) >= 0)
+      document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <link rel="stylesheet" href="/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><circle cx='11' cy='11' r='10' fill='%23F5CE3E'/><circle cx='11' cy='11' r='6' fill='%235C4B00'/><circle cx='11' cy='11' r='4' fill='%23F5CE3E'/><circle cx='11' cy='3' r='1.8' fill='%235C4B00'/><circle cx='18.6' cy='7' r='1.8' fill='%235C4B00'/><circle cx='18.6' cy='15' r='1.8' fill='%235C4B00'/><circle cx='11' cy='19' r='1.8' fill='%235C4B00'/><circle cx='3.4' cy='15' r='1.8' fill='%235C4B00'/><circle cx='3.4' cy='7' r='1.8' fill='%235C4B00'/></svg>">
 </head>
 <body>
 
 <header class="titlebar">
   <a class="brand" href="/" title="Back to the launch screen"
      style="text-decoration:none; color:inherit">
-    <span class="avatar" id="brandDragon"></span>
-    <span class="brand-name">CastleKeep</span>
-    <span class="brand-sub" data-who>local assistant</span>
+    <span class="sanctum-mark" id="brandDragon"></span>
+    <span class="brand-name">Sanctum</span>
+    <span class="brand-sub">local assistant</span>
   </a>
   <div class="titlebar-right">
     <span class="chip" id="tierChip" title="Reported by wxc-exec --probe on this machine">checking the host&hellip;</span>
@@ -28,13 +35,22 @@
 <div class="shell">
 
   <nav class="rail">
-    <div class="rail-label">Workspace</div>
+    <div class="rail-label">Your space</div>
     <div class="rail-chip" id="hostChip">&hellip;</div>
-    <button class="nav" data-tab="assistant"><i data-ic="chat"></i><span data-who>Assistant</span></button>
-    <button class="nav" data-tab="control"><i data-ic="panel"></i>Control Panel</button>
-    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Policy</button>
+    <button class="nav" data-tab="assistant"><i data-ic="chat"></i>Agents</button>
+    <button class="nav" data-tab="memory"><i data-ic="mail"></i>Memory</button>
+    <button class="nav" data-tab="control"><i data-ic="panel"></i>Insights</button>
+
+    <div class="rail-sep"></div>
+
+    <div class="rail-label">Sandbox</div>
     <button class="nav" data-tab="run"><i data-ic="terminal"></i>Run</button>
+    <button class="nav" data-tab="policy"><i data-ic="shield"></i>Sandbox</button>
     <button class="nav" data-tab="settings"><i data-ic="gear"></i>Settings</button>
+
+    <!-- always-on agent bubble rendered here by JS -->
+    <div id="alwaysOnSlot"></div>
+
     <div class="rail-foot">
       <div class="rail-label">This turn</div>
       <div class="rail-stat"><span id="statCalls">0</span><em>sandboxes spawned</em></div>
@@ -49,56 +65,101 @@
         <div class="pane-head">
           <span class="avatar sm" id="chatDragon"></span>
           <div>
-            <h1 data-who>Assistant</h1>
-            <p class="sub">Runs on this machine. Nothing you type leaves it.</p>
+            <h1 id="chatTitle">Assistant</h1>
+            <p class="sub" id="chatSub">Runs on this machine. Nothing you type leaves it.</p>
           </div>
           <button class="btn ghost right" id="clearChat">New conversation</button>
         </div>
+        <!-- Switching agent here is not a view change: it swaps the system
+             prompt, the tool set and the policy file all at once. The faces
+             are the ones chosen during setup, so the strip and the rail are
+             recognisably the same agents. -->
+        <div class="personas" id="personaStrip"></div>
+        <!-- The empty state below is a placeholder for the moment before the
+             first hydrate. renderEmptyState() in app.js replaces it wholesale
+             with one built for the selected subagent. -->
         <div class="transcript" id="transcript">
           <div class="empty">
             <span class="avatar lg" id="emptyDragon"></span>
-            <h2>Ask about this device.</h2>
-            <p><span data-who>Assistant</span> can look around inside a sandbox you control. Every tool call
-               runs in a throwaway container built from <code>policy.json</code>
-               as it is at that instant.</p>
-            <div class="starters">
-              <button class="starter">Give this machine a quick check-up.</button>
-              <button class="starter">How much disk space is left, and what is eating it?</button>
-              <button class="starter">Try to read a file you are not allowed to read, so I can see what happens.</button>
-              <button class="starter">Can you reach the internet from inside the sandbox?</button>
-            </div>
+            <h2>Ask your agent something.</h2>
+            <p>Every tool call runs in a throwaway container built from this
+               agent's policy file as it is at that instant.</p>
           </div>
         </div>
         <form class="composer" id="composer">
-          <textarea id="input" rows="1" data-who-placeholder
-            placeholder="Ask Assistant something about this device&hellip;"></textarea>
+          <textarea id="input" rows="1" placeholder="Ask something&hellip;"></textarea>
           <button class="btn primary" id="send" type="submit">Send</button>
           <button class="btn danger hidden" id="stop" type="button">Stop</button>
         </form>
       </section>
 
       <aside class="pane side">
-        <div class="pane-head"><h1>Mission</h1></div>
+        <div class="pane-head sbx-head">
+          <h1 id="sideTitle">Sandbox Status</h1>
+          <span class="sbx-on" id="sbxOn">ON</span>
+        </div>
         <div class="scroll" id="missionScroll">
-          <div class="card">
-            <div class="card-title">In force right now</div>
-            <div id="missionPolicy" class="mini"></div>
-            <button class="btn ghost full" data-goto="policy">Change the policy</button>
+          <!-- The mailbox, shown only for agents whose side pane is the
+               mailbox. Read on the HOST, not through the sandbox - so if this
+               shows a message the agent was refused, that gap is the policy
+               doing its job, not a bug. -->
+          <div id="mailboxView" class="hidden">
+            <div class="card">
+              <div class="card-title">Mailbox</div>
+              <p class="card-sub" id="mailboxNote"></p>
+              <div class="maillist" id="mailList"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Calendar</div>
+              <div class="maillist" id="calList"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Drafts</div>
+              <div class="maillist" id="draftList"></div>
+            </div>
           </div>
-          <div class="card">
-            <div class="card-title">Sandbox activity</div>
-            <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
+          <div id="missionView">
+            <p class="sbx-sub" id="sbxSub">Isolated environment with strict policies.</p>
+            <!-- Structured, icon-led status rows with Enforced/Blocked/Allowed
+                 chips. Built from the live policy by renderSandboxStatus(). -->
+            <div class="card sbx-card">
+              <div id="sbxRows" class="sbx-rows"></div>
+            </div>
+            <button class="btn ghost full" data-goto="policy">Edit policy &nearr;</button>
+            <div class="card">
+              <div class="card-title">Sandbox activity</div>
+              <p class="card-sub">Every tool call, as it happens - allowed or
+                 refused by the policy above.</p>
+              <div id="missionRuns" class="runlist"><p class="muted">Nothing has run yet.</p></div>
+            </div>
           </div>
         </div>
       </aside>
     </div>
   </main>
 
+  <!-- ============================== MEMORY ============================== -->
+  <main class="tab" id="tab-memory">
+    <div class="scroll pad">
+      <h1 class="page">Memory</h1>
+      <p class="page-sub">What each agent knows — the files in their vaults,
+         and what they have handed to the always-on agent so far.</p>
+      <div class="card">
+        <div class="card-title">Mailbox &amp; drafts</div>
+        <div id="memMailbox" class="mini"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Calendar</div>
+        <div id="memCalendar" class="mini"></div>
+      </div>
+    </div>
+  </main>
+
   <!-- ========================== CONTROL PANEL ========================== -->
   <main class="tab" id="tab-control">
     <div class="scroll pad">
-      <h1 class="page">Control Panel</h1>
-      <p class="page-sub">Everything CastleKeep knows about this machine, and
+      <h1 class="page">Insights</h1>
+      <p class="page-sub">Everything Sanctum knows about this machine, and
          everything it has done since it started.</p>
 
       <div class="tiles" id="tiles"></div>
@@ -144,11 +205,16 @@
       <section class="pane">
         <div class="pane-head">
           <div>
-            <h1>Policy</h1>
-            <p class="sub">Fixed the moment a sandbox starts. An edit here
-               reaches the next tool call, never one already running.</p>
+            <h1>Sandbox</h1>
+            <p class="sub">Editing <code id="policyFile">policy.json</code>.
+               Fixed the moment a sandbox starts - an edit here reaches the next
+               tool call, never one already running.</p>
           </div>
           <div class="right">
+            <label class="agentpick-wrap" title="Which agent's policy you are editing">
+              <span class="agentpick-lbl">Agent</span>
+              <select id="policyAgentPick" class="agentpick"></select>
+            </label>
             <button class="btn ghost" id="revertPolicy">Revert</button>
             <button class="btn primary" id="savePolicy">Save</button>
           </div>
@@ -182,6 +248,37 @@
                <code>run.py</code>.</p>
             <button class="btn primary" id="runVerify">Run the full check</button>
             <div id="verifySteps" class="steps"></div>
+          </div>
+
+          <!-- Presenter material. Mail scheduled to arrive during the
+               session, with what is next and a way to fire it on a cue
+               instead of on a clock. Deliberately NOT in the bubble: a
+               participant who reads tomorrow's subject lines off their own
+               screen has had the surprise spent on them early. -->
+          <div class="card">
+            <div class="card-title">Calendar feed</div>
+            <p class="card-sub">The calendar comes from Google's secret iCal
+               address, which is read-only and needs no credential. The fetch
+               is host-side - a sandboxed process on this tier cannot reach the
+               network at all. What the agent may <em>read</em> is still
+               <code>policies\base.json</code>.</p>
+            <div id="calFeed" class="mini"></div>
+            <div class="row-btns">
+              <button class="btn ghost" id="calRefresh">Refresh now</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Post still to come</div>
+            <p class="card-sub">Mail that arrives during the session. It lands
+               on a timer measured from the moment you finished setup. The
+               delivery is host-side - it is the mail server, not the agent.
+               What the agent is allowed to <em>read</em> is still
+               <code>policies\base.json</code>.</p>
+            <div id="postList" class="feed"></div>
+            <div class="row-btns">
+              <button class="btn ghost" id="postReset">Restart the session clock</button>
+            </div>
           </div>
 
           <div class="card">
@@ -219,11 +316,48 @@
       <div class="two">
         <div class="card">
           <div class="card-title">Model</div>
+          <p class="card-sub">The model every agent runs on, unless it has its
+             own override below. Lemonade loads the one you pick and warms it -
+             no restart.</p>
+          <div class="modelpick">
+            <select id="modelSelect" class="agentpick"></select>
+            <button class="btn primary" id="modelApply">Use this model</button>
+          </div>
+          <p class="hint" id="modelApplyHint"></p>
           <div id="modelCard" class="mini"></div>
         </div>
         <div class="card">
-          <div class="card-title">Executor</div>
-          <div id="exeCard" class="mini"></div>
+          <div class="card-title">Per-agent model <span class="chip info">router</span></div>
+          <p class="card-sub">Lemonade is a router: give an agent its own model
+             and it serves that one just for that agent. Point the coding agent
+             at a bigger model and the quick ones at a small fast model - the
+             model chip changes as you switch agents.</p>
+          <div id="agentModels" class="agentmodels"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Executor</div>
+        <div id="exeCard" class="mini"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Theme</div>
+        <p class="card-sub">Changes the whole app straight away and is
+           remembered in <code>profile.json</code>.</p>
+        <div class="themerow" id="themeRow"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Your setup</div>
+        <p class="card-sub">Lives in <code>profile.json</code>, which is not in
+           git. Re-running setup leaves any policy file that already exists
+           alone - your edits are the interesting artefact and overwriting them
+           would be the rudest thing this button could do.</p>
+        <div id="profileCard" class="mini"></div>
+        <div class="row-btns">
+          <a class="btn ghost" href="/onboard">Change names and agents</a>
+          <button class="btn ghost" id="resetProfile">Reset setup</button>
         </div>
       </div>
       <div class="card">
@@ -234,10 +368,46 @@
       <div class="card">
         <div class="card-title">How this is put together</div>
         <div class="prose" id="aboutCard"></div>
+        <div class="row-btns">
+          <a class="btn ghost" href="/architecture" target="_blank"
+             rel="noopener">Diagrams of all of this</a>
+        </div>
       </div>
     </div>
   </main>
 
+</div>
+
+<!-- The always-on base agent. It is not in the tab strip because it is not a
+     view: it is running in the background whether or not this panel is open,
+     merging what the four personas produce. The counter only moves when a
+     real sandboxed sync under policies\base.json was allowed to move it. -->
+<div class="keeper" id="keeper" hidden>
+  <div class="keeper-panel" id="keeperPanel" hidden>
+    <div class="keeper-head">
+      <span class="face" id="keeperFace"></span>
+      <div>
+        <h3 id="keeperName">Base agent</h3>
+        <p id="keeperSub">always on</p>
+      </div>
+      <button class="x" id="keeperClose" title="Close">&times;</button>
+    </div>
+    <div class="keeper-note" id="keeperNote"></div>
+    <div class="keeper-tabs">
+      <button data-ktab="calendar" class="on">Calendar</button>
+      <button data-ktab="drafts">Drafts</button>
+      <button data-ktab="inbox">Mail</button>
+    </div>
+    <div class="keeper-body" id="keeperBody"></div>
+    <div class="keeper-foot">
+      <button class="btn ghost" id="keeperSync">Check now</button>
+      <button class="btn ghost" id="keeperPolicy">Its policy</button>
+      <span class="when" id="keeperWhen"></span>
+    </div>
+  </div>
+  <button class="keeper-btn" id="keeperBtn" title="Your always-on agent">
+    <span class="keeper-badge" id="keeperBadge" hidden>0</span>
+  </button>
 </div>
 
 <div class="toast" id="toast"></div>

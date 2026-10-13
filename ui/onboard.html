@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Sanctum</title>
+<!-- Before the stylesheet, deliberately. A deferred module script would paint
+     parchment first and flip to the chosen theme a frame later, which on the
+     dark theme is a full-screen white flash on every navigation. -->
+<script>
+  try {
+    var t = localStorage.getItem("castlekeep-theme");
+    if (["parchment", "moonlit", "sakura"].indexOf(t) >= 0)
+      document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><circle cx='11' cy='11' r='10' fill='%23F5CE3E'/><circle cx='11' cy='11' r='6' fill='%235C4B00'/><circle cx='11' cy='11' r='4' fill='%23F5CE3E'/><circle cx='11' cy='3' r='1.8' fill='%235C4B00'/><circle cx='18.6' cy='7' r='1.8' fill='%235C4B00'/><circle cx='18.6' cy='15' r='1.8' fill='%235C4B00'/><circle cx='11' cy='19' r='1.8' fill='%235C4B00'/><circle cx='3.4' cy='15' r='1.8' fill='%235C4B00'/><circle cx='3.4' cy='7' r='1.8' fill='%235C4B00'/></svg>">
+<style>
+body{overflow:auto; display:grid; place-items:start center; min-height:100vh;
+  padding:40px 20px 64px}
+
+.ob{width:100%; max-width:680px}
+
+.hero{display:flex; align-items:center; gap:14px; margin-bottom:10px}
+.mark{width:52px; height:52px; border-radius:14px; display:grid;
+  place-items:center; background:var(--brand-soft);
+  border:1px solid var(--brand-line); flex:0 0 52px; overflow:hidden}
+.mark svg{width:128%; height:128%; margin-top:6%}
+.wordmark{font-size:22px; font-weight:800; letter-spacing:-.02em; line-height:1.2}
+.tagline{color:var(--muted); font-size:12.5px; margin-top:3px}
+.hero .themerow{margin-left:auto}
+
+/* progress */
+.pips{display:flex; gap:6px; margin:18px 0 20px}
+.pip{height:4px; flex:1; border-radius:2px; background:var(--border);
+  transition:background .3s}
+.pip.on{background:var(--brand-dark)}
+.pip.done{background:var(--primary)}
+
+.panel{background:var(--surface); border:1px solid var(--border);
+  border-radius:14px; box-shadow:var(--shadow); padding:26px 28px}
+.panel[hidden]{display:none}
+.step-n{font-size:10px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint)}
+.panel h2{font-size:20px; margin:6px 0 6px; letter-spacing:-.02em}
+.panel .lede{color:var(--muted); font-size:13px; line-height:1.6;
+  max-width:62ch; margin-bottom:20px}
+
+.bigin{width:100%; height:46px; padding:0 14px; font-size:16px; font-weight:600;
+  border:1px solid var(--border2); border-radius:10px; background:var(--surface2);
+  color:var(--ink); font-family:var(--sans)}
+.bigin:focus{outline:none; border-color:var(--brand-dark);
+  background:var(--surface); box-shadow:0 0 0 3px var(--brand-soft)}
+
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+.sug{height:28px; padding:0 11px; border-radius:8px; font-size:12px;
+  font-weight:600; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface2); color:var(--ink2)}
+.sug:hover{background:var(--brand-soft); border-color:var(--brand-line)}
+
+.sublabel{font-size:12px; font-weight:800; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--faint); margin:24px 0 0}
+
+/* selectable cards, used for personas and for presets */
+.pick{display:flex; gap:13px; align-items:flex-start; width:100%; text-align:left;
+  padding:15px 16px; border:1px solid var(--border2); border-radius:12px;
+  background:var(--surface2); cursor:pointer; margin-bottom:10px;
+  font-family:var(--sans); color:var(--ink)}
+.pick:hover{border-color:var(--brand-line); background:var(--brand-soft)}
+.pick.on{border-color:var(--primary); background:var(--primary-soft);
+  box-shadow:0 0 0 1px var(--primary)}
+.box{flex:0 0 18px; width:18px; height:18px; border-radius:5px; margin-top:2px;
+  border:1.5px solid var(--border2); background:var(--surface); display:grid;
+  place-items:center; font-size:12px; font-weight:800; color:#fff}
+.pick.on .box,
+.agentcard.on .box{background:var(--primary); border-color:var(--primary)}
+.pick.on .box::after,
+.agentcard.on .box::after{content:"\2713"}
+.pick .t{font-size:14px; font-weight:700; display:flex; align-items:center; gap:7px}
+.pick .d{font-size:12.5px; color:var(--muted); margin-top:3px; line-height:1.55}
+.pick .g{margin-top:9px; display:flex; flex-direction:column; gap:3px}
+.pick .g div{font-size:11.5px; color:var(--ink2); display:flex; gap:7px}
+.pick .g b{flex:0 0 72px; color:var(--faint); font-weight:700; font-size:10px;
+  letter-spacing:.07em; text-transform:uppercase; padding-top:1px}
+.pick .g code{font-size:10.5px}
+.pick .refuses{margin-top:9px; font-size:11.5px; color:var(--deny);
+  background:var(--deny-soft); border:1px solid var(--deny-line);
+  border-radius:7px; padding:6px 9px; line-height:1.5}
+
+/* a persona card, which owns a critter picker of its own */
+.agentcard{border:1px solid var(--border2); border-radius:13px;
+  background:var(--surface2); margin-bottom:11px; overflow:hidden}
+.agentcard.on{border-color:var(--primary); box-shadow:0 0 0 1px var(--primary)}
+.agenthead{display:flex; gap:13px; align-items:flex-start; width:100%;
+  text-align:left; padding:15px 16px; background:transparent; border:0;
+  cursor:pointer; font-family:var(--sans); color:var(--ink)}
+.agenthead:hover{background:var(--brand-soft)}
+.agentcard.on .agenthead{background:var(--primary-soft)}
+.agentface{width:40px; height:40px; border-radius:13px; flex:0 0 40px;
+  background:var(--surface); display:grid; place-items:center; overflow:hidden;
+  border:1px solid var(--border)}
+.agentface svg{width:132%; height:132%; margin-top:6%}
+.agentpick{padding:0 16px 14px; border-top:1px solid var(--border)}
+.agentpick .critterrow{margin-top:11px}
+.agentpick > span{font-size:11.5px; color:var(--muted)}
+
+.agentgroup{margin-bottom:22px}
+.agentgroup > h3{font-size:13px; margin-bottom:3px; display:flex;
+  align-items:center; gap:8px}
+.agentgroup > h3 .agentface{width:26px; height:26px; flex:0 0 26px;
+  border-radius:9px}
+.agentgroup > p{font-size:12px; color:var(--muted); margin-bottom:11px}
+
+/* Sticky to the viewport bottom. Step 3 pre-selects all four personas and
+   expands a face-picker under each, which on a 768px laptop pushes Continue
+   ~1600px down - and show() scrolls to the top on arrival, so the button was
+   simply never on screen. Pinning the nav keeps it reachable at any height. */
+.nav{display:flex; gap:10px; align-items:center; margin-top:22px;
+  position:sticky; bottom:0; background:var(--surface);
+  padding:14px 0 2px; margin-bottom:-2px;
+  box-shadow:0 -1px 0 var(--border), 0 -14px 16px -14px var(--surface)}
+.b{height:38px; padding:0 18px; border-radius:10px; font-size:13px;
+  font-weight:700; cursor:pointer; border:1px solid var(--border2);
+  background:var(--surface); color:var(--ink2); font-family:var(--sans)}
+.b:hover{background:var(--surface3)}
+.b.go{background:var(--primary); border-color:var(--primary); color:#fff}
+.b.go:hover{background:var(--primary-dark)}
+.b:disabled{opacity:.45; cursor:not-allowed}
+.nav .hint{font-size:11.5px; color:var(--muted); margin-left:auto}
+
+.linky{background:none; border:0; padding:0; font:inherit; font-size:11.5px;
+  font-weight:700; color:var(--primary); cursor:pointer; text-decoration:underline}
+
+.foot{text-align:center; font-size:11.5px; color:var(--faint); margin-top:18px}
+.foot a{color:var(--muted)}
+</style>
+</head>
+<body class="themed">
+
+<div class="ob">
+
+  <div class="hero">
+    <div class="mark" id="mark"></div>
+    <div>
+      <div class="wordmark">Sanctum</div>
+      <div class="tagline" id="tagline">Let's set this up. Five questions.</div>
+    </div>
+    <div class="themerow" id="themeRow"></div>
+  </div>
+
+  <div class="pips">
+    <span class="pip" data-pip="0"></span>
+    <span class="pip" data-pip="1"></span>
+    <span class="pip" data-pip="2"></span>
+    <span class="pip" data-pip="3"></span>
+    <span class="pip" data-pip="4"></span>
+  </div>
+
+  <!-- 1 ------------------------------------------------------------- -->
+  <section class="panel" id="p0">
+    <div class="step-n">Step 1 of 5</div>
+    <h2>What should we call you?</h2>
+    <p class="lede">Your agents use this when they talk to you. It stays on this
+      machine, in a file called <code>profile.json</code> that is not in git.</p>
+    <input class="bigin" id="userName" placeholder="Your name" autocomplete="off"
+           spellcheck="false" maxlength="40">
+    <div class="nav">
+      <button class="b go" data-next>Continue</button>
+      <span class="hint">Enter</span>
+    </div>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------- -->
+  <section class="panel" id="p1" hidden>
+    <div class="step-n">Step 2 of 5</div>
+    <h2>Name your base agent, and give it a face.</h2>
+    <p class="lede">This one is always on. It does not hold any of your data -
+      it collects what the other agents produce and keeps one calendar and one
+      mail view up to date. You are going to spend the next half hour telling
+      it what it may and may not reach, so it helps if it has a name.</p>
+    <input class="bigin" id="agentName" placeholder="Assistant" autocomplete="off"
+           spellcheck="false" maxlength="30">
+    <div class="chips" id="agentSugs"></div>
+    <div class="sublabel">Pick its face</div>
+    <div class="critterrow" id="baseCritters"></div>
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" data-next>Continue</button>
+    </div>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------- -->
+  <section class="panel" id="p2" hidden>
+    <div class="step-n">Step 3 of 5</div>
+    <h2>Who else is working for you?</h2>
+    <p class="lede">Each of these is a separate agent with its own folder, its
+      own tools and its own security policy. None of them can see inside
+      another, and <span id="baseEcho">your base agent</span> cannot see inside
+      any of them - it only collects what they hand over. Give each one a face
+      so you can tell them apart; each face can only be used once.</p>
+    <div id="personaCards"></div>
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" data-next id="next2">Continue</button>
+      <span class="hint" id="pickedHint"></span>
+    </div>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------- -->
+  <section class="panel" id="p3" hidden>
+    <div class="step-n">Step 4 of 5</div>
+    <h2>Connect the accounts.</h2>
+    <p class="lede">These create <strong>local dummy accounts</strong> for the
+      workshop. Nothing authenticates anywhere, no password is asked for and no
+      request leaves this machine - the names you type here go into the sample
+      mail, repositories and saved threads your agents read, so the data says
+      your handle instead of a placeholder.</p>
+
+    <div class="conn" id="connGmail">
+      <label for="inGmail">Gmail address</label>
+      <div class="hint">Seeds the shared mailbox your base agent keeps.
+         Must be a <code>@gmail.com</code> address.</div>
+      <div class="wrap"><input id="inGmail" autocomplete="off" spellcheck="false"
+        placeholder="you@gmail.com" maxlength="64"></div>
+      <div class="say"></div>
+    </div>
+
+    <div class="conn" id="connReddit">
+      <label for="inReddit">Reddit username</label>
+      <div class="hint">Seeds the saved r/techsupport threads the PC Assist
+         agent reads. Letters, numbers, dashes and underscores, 3 to 20.</div>
+      <div class="wrap"><span class="pre">u/</span><input id="inReddit"
+        autocomplete="off" spellcheck="false" placeholder="username" maxlength="20"></div>
+      <div class="say"></div>
+    </div>
+
+    <div class="conn" id="connGithub">
+      <label for="inGithub">GitHub username</label>
+      <div class="hint">Seeds the repositories, issues and pull requests the
+         Coding agent reads.</div>
+      <div class="wrap"><span class="pre">github.com/</span><input id="inGithub"
+        autocomplete="off" spellcheck="false" placeholder="username" maxlength="39"></div>
+      <div class="say"></div>
+    </div>
+
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" data-next id="next3">Continue</button>
+      <button class="linky" id="useDefaults" type="button">Use the workshop defaults</button>
+    </div>
+  </section>
+
+  <!-- 5 ------------------------------------------------------------- -->
+  <section class="panel" id="p4" hidden>
+    <div class="step-n">Step 5 of 5</div>
+    <h2>Decide what each one is allowed to touch.</h2>
+    <p class="lede">These are starting points, not locks. Every one of them is a
+      plain policy file you can edit while the app is running, and the edit lands
+      on that agent's very next action. Nothing here can grant something the
+      Policy tab could not.</p>
+    <div id="presets"></div>
+    <div class="nav">
+      <button class="b" data-back>Back</button>
+      <button class="b go" id="finish">Finish setup</button>
+      <span class="hint" id="saveHint"></span>
+    </div>
+  </section>
+
+  <p class="foot">Changed your mind later? Settings has a reset.
+     &nbsp;&middot;&nbsp; <a href="/app">Skip setup</a></p>
+
+</div>
+
+<script type="module">
+import { critterSvg, CRITTERS } from "/critters.js";
+import { applyTheme, storedTheme, themePicker } from "/theme.js";
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+const face = (species, state, cls) => {
+  const n = el("span", cls || "agentface");
+  n.innerHTML = critterSvg(species, state || "idle");
+  return n;
+};
+
+const STEPS = 5;
+const AGENT_SUGGESTIONS = ["Keep", "Pip", "Mortimer", "Scout", "Wick", "Bramble"];
+
+/* Same three rules the server enforces in profile.py. Duplicated rather than
+   fetched because the point of validating here is to say something useful
+   before anything is sent - but the server is still the one that decides, and
+   an entry that gets past this is dropped there rather than trusted. */
+const CONNECTORS = [
+  { key: "gmail", box: "connGmail", input: "inGmail",
+    rule: /^[A-Za-z0-9._%+-]+@gmail\.com$/i,
+    fallback: "castlekeep.workshop@gmail.com",
+    bad: "That needs to be a @gmail.com address.",
+    ok: "Your mailbox will be seeded under this address." },
+  { key: "reddit", box: "connReddit", input: "inReddit",
+    rule: /^[A-Za-z0-9_-]{3,20}$/,
+    fallback: "keep_curious",
+    bad: "3 to 20 characters: letters, numbers, - and _ only.",
+    ok: "Saved threads will be filed under this account." },
+  { key: "github", box: "connGithub", input: "inGithub",
+    rule: /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/,
+    fallback: "octo-participant",
+    bad: "Letters, numbers and dashes, not starting or ending with a dash.",
+    ok: "Repositories will be owned by this account." },
+];
+
+const S = {
+  step: 0,
+  agents: [],          // the registry, as /api/profile describes it
+  base: null,          // the base agent's record
+  personas: [],        // the four
+  chosen: new Set(),
+  presets: {},         // agentId -> presetId
+  critters: {},        // agentId -> species
+  theme: storedTheme(),
+};
+
+const BASE = "base";
+
+/* ------------------------------------------------------------- critters */
+
+/* Assigning a face is a SWAP, never a steal. If the fox is already on the
+   finance agent and you put it on the base agent, finance gets whatever the
+   base agent was wearing. The alternative - refusing the click, or leaving
+   finance blank - makes the picker feel broken at exactly the moment somebody
+   is playing with it, and with five faces for five agents there is always
+   something to trade. */
+function assignCritter(agentId, species) {
+  const holder = Object.keys(S.critters)
+    .find((id) => id !== agentId && S.critters[id] === species);
+  if (holder) S.critters[holder] = S.critters[agentId];
+  S.critters[agentId] = species;
+}
+
+function critterRow(agentId, onPick) {
+  const row = el("div", "critterrow");
+  for (const c of CRITTERS) {
+    const mine = S.critters[agentId] === c.id;
+    const takenBy = Object.keys(S.critters)
+      .find((id) => id !== agentId && S.critters[id] === c.id);
+    // On step 3 a face held by another PERSONA is tradeable, but the base
+    // agent's is not: it was chosen one screen ago and silently moving it
+    // would undo a decision the participant has already made.
+    const locked = takenBy === BASE && agentId !== BASE;
+    const b = el("button", "critter" + (mine ? " on" : "") + (locked ? " taken" : ""));
+    b.type = "button";
+    if (locked) b.title = "Already wearing this one: your base agent.";
+    b.appendChild(face(c.id, mine ? "happy" : "idle", "face"));
+    b.appendChild(el("b", null, c.name));
+    b.appendChild(el("em", null, locked ? "taken" : c.blurb.split(".")[0]));
+    if (!locked) {
+      b.addEventListener("click", () => { assignCritter(agentId, c.id); onPick(); });
+    }
+    row.appendChild(b);
+  }
+  return row;
+}
+
+/* ------------------------------------------------------------------ nav */
+
+function valid(step) {
+  if (step === 2) return S.chosen.size > 0;
+  if (step === 3) return CONNECTORS.every((c) => c.rule.test($(c.input).value.trim()));
+  return true;
+}
+
+function show(n) {
+  S.step = Math.max(0, Math.min(STEPS - 1, n));
+  for (let i = 0; i < STEPS; i++) $("p" + i).hidden = i !== S.step;
+  document.querySelectorAll(".pip").forEach((p, i) => {
+    p.className = "pip" + (i < S.step ? " done" : i === S.step ? " on" : "");
+  });
+  // The base agent's face wakes up as you go, so the last screen does not look
+  // like the first one with different words on it.
+  $("mark").innerHTML = critterSvg(S.critters[BASE] || "owl",
+    ["asleep", "idle", "thinking", "working", "happy"][S.step]);
+  if (S.step === 1) renderBaseCritters();
+  if (S.step === 2) renderPersonas();
+  if (S.step === 3) checkConnectors();
+  if (S.step === 4) renderPresets();
+  const focus = $("p" + S.step).querySelector(".bigin, input");
+  if (focus) setTimeout(() => focus.focus(), 30);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.querySelectorAll("[data-next]").forEach((b) =>
+  b.addEventListener("click", () => { if (valid(S.step)) show(S.step + 1); }));
+document.querySelectorAll("[data-back]").forEach((b) =>
+  b.addEventListener("click", () => show(S.step - 1)));
+
+/* Enter advances, so the whole thing can be done from the keyboard. */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || S.step === STEPS - 1) return;
+  e.preventDefault();
+  if (valid(S.step)) show(S.step + 1);
+});
+
+$("agentName").addEventListener("input", () => {
+  const n = ($("agentName").value || "").trim();
+  $("baseEcho").textContent = n || "your base agent";
+});
+
+/* ---------------------------------------------------------------- theme */
+
+themePicker($("themeRow"), S.theme, (id) => { S.theme = id; });
+
+/* ------------------------------------------------------- agent name chips */
+
+for (const name of AGENT_SUGGESTIONS) {
+  const b = el("button", "sug", name);
+  b.type = "button";
+  b.addEventListener("click", () => {
+    $("agentName").value = name;
+    $("baseEcho").textContent = name;
+    $("agentName").focus();
+  });
+  $("agentSugs").appendChild(b);
+}
+
+/* ------------------------------------------------------ step 2: the base */
+
+function renderBaseCritters() {
+  const box = $("baseCritters");
+  box.innerHTML = "";
+  box.appendChild(critterRow(BASE, () => {
+    renderBaseCritters();
+    $("mark").innerHTML = critterSvg(S.critters[BASE], "happy");
+  }));
+}
+
+/* --------------------------------------------------- step 3: the personas */
+
+function renderPersonas() {
+  const box = $("personaCards");
+  box.innerHTML = "";
+  for (const a of S.personas) {
+    const on = S.chosen.has(a.id);
+    const card = el("div", "agentcard" + (on ? " on" : ""));
+
+    const head = el("button", "agenthead");
+    head.type = "button";
+    head.appendChild(el("span", "box"));
+    head.appendChild(face(S.critters[a.id], on ? "happy" : "asleep"));
+    const txt = el("div");
+    txt.appendChild(el("div", "t", a.label));
+    txt.appendChild(el("div", "d", a.blurb));
+    const g = el("div", "g");
+    addGrant(g, "Its folder", ["vault\\" + a.vault + "\\" + a.dataFolder]);
+    addGrant(g, "Produces", ["vault\\" + a.vault + "\\invites",
+                             "vault\\" + a.vault + "\\outbox"]);
+    txt.appendChild(g);
+    head.appendChild(txt);
+    head.addEventListener("click", () => {
+      if (on) S.chosen.delete(a.id); else S.chosen.add(a.id);
+      renderPersonas();
+    });
+    card.appendChild(head);
+
+    if (on) {
+      const pick = el("div", "agentpick");
+      pick.appendChild(el("span", null, "Its face:"));
+      pick.appendChild(critterRow(a.id, renderPersonas));
+      card.appendChild(pick);
+    }
+    box.appendChild(card);
+  }
+  $("next2").disabled = S.chosen.size === 0;
+  $("pickedHint").textContent = S.chosen.size
+    ? S.chosen.size + (S.chosen.size === 1 ? " agent" : " agents") + " selected"
+    : "Pick at least one.";
+}
+
+/* ------------------------------------------------- step 4: the connectors */
+
+function checkConnectors() {
+  for (const c of CONNECTORS) {
+    const box = $(c.box);
+    const value = $(c.input).value.trim();
+    const say = box.querySelector(".say");
+    if (!value) {
+      box.className = "conn";
+      say.textContent = "";
+    } else if (c.rule.test(value)) {
+      box.className = "conn ok";
+      say.textContent = c.ok;
+    } else {
+      box.className = "conn bad";
+      say.textContent = c.bad;
+    }
+  }
+  $("next3").disabled = !valid(3);
+}
+
+for (const c of CONNECTORS) {
+  $(c.input).addEventListener("input", checkConnectors);
+}
+
+$("useDefaults").addEventListener("click", () => {
+  for (const c of CONNECTORS) $(c.input).value = c.fallback;
+  checkConnectors();
+});
+
+/* ---------------------------------------------------- step 5: the presets */
+
+function renderPresets() {
+  const box = $("presets");
+  box.innerHTML = "";
+  // The base agent first and always: it is the one whose grants reach across
+  // every other agent, so it is the one worth reading before the rest.
+  const order = [S.base].concat(S.personas.filter((a) => S.chosen.has(a.id)));
+  for (const a of order) {
+    if (!a) continue;
+    const group = el("div", "agentgroup");
+    const h = el("h3");
+    h.appendChild(face(S.critters[a.id], "idle"));
+    h.appendChild(document.createTextNode(
+      a.id === BASE ? (($("agentName").value || "").trim() || "Assistant") +
+                      "  ·  always on" : a.label));
+    group.appendChild(h);
+    group.appendChild(el("p", null, a.blurb));
+
+    for (const p of a.presets) {
+      const card = el("button", "pick" + (S.presets[a.id] === p.id ? " on" : ""));
+      card.type = "button";
+      card.appendChild(el("span", "box"));
+      const txt = el("div");
+      const t = el("div", "t");
+      t.appendChild(el("span", null, p.label));
+      if (p.recommended) t.appendChild(el("span", "chip ok", "recommended"));
+      txt.appendChild(t);
+      txt.appendChild(el("div", "d", p.summary));
+
+      const g = el("div", "g");
+      addGrant(g, "Reads", p.grants.read.length ? p.grants.read : ["nothing extra"]);
+      addGrant(g, "Writes", p.grants.write.length ? p.grants.write : ["nothing"]);
+      addGrant(g, "Network", [p.grants.outbound === "allow"
+        ? "outbound allowed" : "no network at all"]);
+      if (p.grants.toolsOff.length) addGrant(g, "Off", p.grants.toolsOff);
+      txt.appendChild(g);
+
+      txt.appendChild(el("div", "refuses", "Will refuse: " + p.refuses));
+      card.appendChild(txt);
+      card.addEventListener("click", () => {
+        S.presets[a.id] = p.id;
+        renderPresets();
+      });
+      group.appendChild(card);
+    }
+    box.appendChild(group);
+  }
+}
+
+function addGrant(g, label, values) {
+  const row = el("div");
+  row.appendChild(el("b", null, label));
+  const v = el("span");
+  values.forEach((s, i) => {
+    if (i) v.appendChild(document.createTextNode("  "));
+    v.appendChild(el("code", null, s));
+  });
+  row.appendChild(v);
+  g.appendChild(row);
+}
+
+/* ---------------------------------------------------------------- save */
+
+$("finish").addEventListener("click", async () => {
+  const btn = $("finish");
+  btn.disabled = true;
+  $("saveHint").textContent = "Writing your policy files…";
+
+  const connectors = {};
+  for (const c of CONNECTORS) connectors[c.key] = $(c.input).value.trim();
+
+  const payload = {
+    userName: $("userName").value.trim(),
+    agentName: $("agentName").value.trim() || "Assistant",
+    subagents: S.personas.filter((a) => S.chosen.has(a.id)).map((a) => a.id),
+    presets: S.presets,
+    critters: S.critters,
+    connectors,
+    theme: S.theme,
+  };
+  payload.activeAgent = payload.subagents[0];
+  try {
+    const r = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    location.href = "/app";
+  } catch (e) {
+    btn.disabled = false;
+    $("saveHint").textContent = "Could not save: " + (e.message || e);
+  }
+});
+
+/* ---------------------------------------------------------------- boot */
+
+(async function boot() {
+  try {
+    const st = await (await fetch("/api/profile")).json();
+    S.agents = st.agents || [];
+    S.base = S.agents.find((a) => a.role === "base") || null;
+    S.personas = S.agents.filter((a) => a.role === "persona");
+
+    // Defaults first, so every agent has a face even before anybody clicks.
+    // The registry ships five distinct ones; assignCritter keeps them that way.
+    for (const a of S.agents) S.critters[a.id] = a.critter;
+
+    // Somebody re-running setup should see their current answers, not a blank
+    // form that silently discards them.
+    const p = st.profile;
+    if (p) {
+      $("userName").value = p.userName || "";
+      $("agentName").value = p.agentName || "";
+      $("baseEcho").textContent = p.agentName || "your base agent";
+      (p.subagents || []).forEach((id) => { if (id !== BASE) S.chosen.add(id); });
+      Object.assign(S.presets, p.presets || {});
+      for (const [id, c] of Object.entries(p.critters || {})) {
+        if (CRITTERS.some((x) => x.id === c)) S.critters[id] = c;
+      }
+      for (const c of CONNECTORS) $(c.input).value = (p.connectors || {})[c.key] || "";
+      if (p.theme) { S.theme = applyTheme(p.theme); themePicker($("themeRow"), S.theme, (id) => { S.theme = id; }); }
+      $("tagline").textContent = "Changing your setup. Five questions.";
+    }
+    if (!S.chosen.size) S.personas.forEach((a) => S.chosen.add(a.id));
+    for (const a of S.agents) {
+      if (!S.presets[a.id]) {
+        const rec = a.presets.find((x) => x.recommended) || a.presets[0];
+        if (rec) S.presets[a.id] = rec.id;
+      }
+    }
+  } catch (e) {
+    $("tagline").textContent = "The Sanctum server is not answering.";
+  }
+  show(0);
+})();
+</script>
+</body>
+</html>

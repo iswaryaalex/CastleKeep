@@ -15,12 +15,29 @@
     "temperature": 0.3,
     "maxTokens": 1536,
     "toolCallMode": "auto",
+    "_thinking_note": "false asks the model to skip its reasoning channel. Leave it off: a reasoning model will happily call the right tools, read the right file, work out the right answer and write every word of it into reasoning, emitting no reply at all - which looks exactly like the sandbox having eaten the answer. Set it to true to watch that happen, or null to take the server's default.",
+    "thinking": false,
     "requestTimeoutSec": 300
   },
   "agent": {
     "maxToolCallsPerTurn": 8,
     "workspace": "workspace",
     "assistantName": "Keeper"
+  },
+  "base": {
+    "_note": "The always-on base agent. Every syncIntervalSec it checks whether anything in vault\\*\\invites or vault\\*\\outbox has changed - a free host-side stat - and if so spawns ONE real sandbox under policies\\base.json to merge it. The check decides when to ask; policies\\base.json decides what it is allowed to see. Raise this if the run log is too busy to read; it is not a security knob.",
+    "syncIntervalSec": 20
+  },
+  "calendar": {
+    "_note": "Google Calendar's 'Secret address in iCal format'. An unguessable read-only URL that needs no credential, which is why the calendar can refresh live on every machine while the mailbox stays a snapshot. TREAT IT LIKE A PASSWORD: anyone holding it can read this calendar. Rotate it in Google Calendar settings when the workshop is over. Leave icsUrl empty to use whatever the mailbox seed laid down.",
+    "icsUrl": "https://calendar.google.com/calendar/ical/amdmxcdemo%40gmail.com/private-6abdb9ee5b5d3c672acd49334f7131bc/basic.ics",
+    "refreshMinutes": 10,
+    "daysBack": 7,
+    "daysAhead": 45
+  },
+  "vault": {
+    "_note": "Where the four persona agents live, one sealed folder each. Seeded on first run from core\\vault.py and not in git.",
+    "dir": "vault"
   },
   "ui": {
     "port": 7701,

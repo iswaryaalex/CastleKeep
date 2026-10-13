@@ -8,8 +8,15 @@ import platform
 import threading
 import time
 
+from . import agents as agents_mod
+from . import basecamp as basecamp_mod
+from . import icsfeed as icsfeed_mod
+from . import mailbox as mailbox_mod
 from . import policy as policy_mod
+from . import postman as postman_mod
+from . import profile as profile_mod
 from . import tools as tools_mod
+from . import vault as vault_mod
 from .lemonade import Lemonade
 from .mxc import Mxc
 
@@ -60,10 +67,42 @@ class App:
         self.policy = policy_mod.load(self.policy_path)
         self._policy_mtime = _mtime(self.policy_path)
 
+        # Per-subagent policies, keyed by agent id. The root policy.json above
+        # stays exactly where it was and keeps its old meaning: it is what
+        # verify.py, pwsh-ladder.py and Phase 1 all read, and it is the
+        # fallback for any agent that has no file of its own yet.
+        self._policies = {}
+        self._policy_mtimes = {}
+
         ws = (self.cfg.get("agent") or {}).get("workspace") or "workspace"
         self.workspace = os.path.abspath(os.path.join(self.project_dir, ws))
         os.makedirs(self.workspace, exist_ok=True)
+        self.mailbox = os.path.abspath(os.path.join(
+            self.project_dir,
+            (self.cfg.get("mail") or {}).get("dir") or "mailbox"))
+        # No synthetic calendar when a live .ics address is configured.
+        mailbox_mod.ensure(
+            self.mailbox, self.project_dir,
+            seed_calendar=not icsfeed_mod.settings(self.cfg)["url"])
+        self.vault = os.path.abspath(os.path.join(
+            self.project_dir,
+            (self.cfg.get("vault") or {}).get("dir") or "vault"))
         self.capture_dir = os.path.join(self.project_dir, "receipts")
+
+        self.profile = profile_mod.load(self.project_dir)
+        # Seeded with whatever accounts setup collected, so the GitHub records
+        # say the participant's own handle rather than a placeholder. Safe to
+        # run before onboarding: connectors() is empty then and the seed falls
+        # back to its own defaults.
+        vault_mod.ensure(self.vault, self.project_dir, self.connectors())
+
+        # Last known state of the live calendar feed. Filled in by
+        # icsfeed.refresh; "cold" until something asks for it.
+        self.calendar = {"state": "cold"}
+
+        # The always-on base agent. Idle until start() decides there is a
+        # profile with a base policy to run under.
+        self.basecamp = basecamp_mod.Basecamp(self)
 
         self.lock = threading.Lock()
         self.runs = []
@@ -85,7 +124,91 @@ class App:
     # -- paths ------------------------------------------------------------
 
     def path_ctx(self):
-        return policy_mod.path_context(self.project_dir, self.workspace)
+        return policy_mod.path_context(self.project_dir, self.workspace,
+                                       self.mailbox, self.vault)
+
+    def tool_ctx(self, agent_id=None):
+        """path_ctx plus the three things a tool needs to know about its caller.
+
+        agentVault / agentData / agentId are NOT policy variables and never
+        reach expand() - see the note in policy.path_context. They exist so a
+        persona's record tools can reach its own folder without the model
+        naming a root, and so an invitation can be stamped with the agent that
+        produced it. Keeping them out of the variable table means lint() and
+        compile_config() stay agent-agnostic: a policy file means the same
+        thing no matter who is about to run under it."""
+        ctx = self.path_ctx()
+        if not agent_id:
+            return ctx
+        rec = agents_mod.get(agent_id)
+        ctx["agentId"] = rec["id"]
+        ctx["agentData"] = rec.get("dataFolder") or ""
+        ctx["agentVault"] = (os.path.join(self.vault, rec["vault"])
+                             if rec.get("vault") else "")
+        return ctx
+
+    # -- profile ----------------------------------------------------------
+
+    def active_agent(self):
+        p = self.profile or {}
+        return p.get("activeAgent") or agents_mod.DEFAULT_ID
+
+    def connectors(self):
+        return (self.profile or {}).get("connectors") or {}
+
+    def set_profile(self, incoming):
+        """Save the profile and lay down a policy file for each subagent the
+        participant chose.
+
+        The preset only lands if that agent has no policy file yet. Re-running
+        onboarding should not silently throw away a policy somebody has spent
+        the last ten minutes editing - and overwriting the one artefact the
+        workshop is about would be the single worst thing this function could
+        do."""
+        self.profile = profile_mod.save(self.project_dir, incoming)
+        written = []
+        for agent_id in self.profile["subagents"]:
+            path = self.policy_path_for(agent_id)
+            if os.path.exists(path):
+                continue
+            pol = agents_mod.preset(agent_id, self.profile["presets"].get(agent_id))
+            if pol is None:
+                continue
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            policy_mod.save(path, pol)
+            written.append(agent_id)
+        self._policies.clear()
+        self._policy_mtimes.clear()
+        # Lay down any vault folder that does not exist yet and seed it with
+        # the handles just typed. Same never-overwrite rule as the policy
+        # files above: somebody re-running setup to change a theme must not
+        # lose the invitations their agents have already produced.
+        vault_mod.ensure(self.vault, self.project_dir, self.connectors())
+        # Start the session clock here, if nothing has started it yet. Mail
+        # scheduled for "+6m" means six minutes after the room finished
+        # setup, and this is the only moment that knows when that was.
+        #
+        # Establish, not reset: somebody who re-runs setup twenty minutes in
+        # to change a theme must not have the remaining post pushed back by
+        # twenty minutes. Rehearsing the whole session again is what
+        # workshop\deliver.py --reset-clock is for.
+        postman_mod.anchor(self.mailbox, self.profile)
+        # Pull the real calendar now that setup is done. In the background:
+        # the browser is about to navigate to the app, and a captive network
+        # would otherwise hold this request open for the whole socket timeout.
+        icsfeed_mod.refresh_async(self)
+        # The base agent may have had no policy a moment ago. Now it does.
+        self.basecamp.start()
+        return self.profile, written
+
+    def apply_preset(self, agent_id, preset_id):
+        """Overwrite one agent's policy with a named preset. Unlike
+        set_profile this is explicit - the participant clicked a preset in the
+        Policy tab knowing it replaces what is there."""
+        pol = agents_mod.preset(agent_id, preset_id)
+        if pol is None:
+            return None
+        return self.save_policy(pol, agent_id)
 
     def host_info(self):
         """The processor name and installed memory, for the one line on the
@@ -193,6 +316,58 @@ class App:
         self._warmup_thread = None
         return True
 
+    def set_model(self, name):
+        """Point the whole app at a different installed model, from the UI.
+
+        Writes lemonade.model into config.json exactly as workshop\\models.py
+        --pick does, then lets refresh_config pick it up on the next poll and
+        warm it. Validated against what Lemonade actually serves, so the UI
+        cannot write a name that will 404 at chat time."""
+        h = self.lemonade.health()
+        served = h.get("models") or []
+        if name not in served:
+            return {"ok": False, "error": "Lemonade is not serving '%s'." % name,
+                    "models": served}
+        cfg = _load_json(self.config_path)
+        cfg.setdefault("lemonade", {})["model"] = name
+        _save_json(self.config_path, cfg)
+        # Force the reload path to fire even within the same poll tick.
+        self._config_mtime = None
+        self.refresh_config()
+        return {"ok": True, "model": name}
+
+    def set_agent_model(self, agent_id, name):
+        """Give one agent its own model, or clear the override (name falsy).
+
+        Stored in the profile, not config.json: it is a per-agent choice that
+        belongs with the other per-agent choices (its critter, its preset), and
+        the agent loop reads it through model_for() on every turn. This is the
+        router demo - switching agents can switch which model Lemonade serves,
+        with nothing changed but one field on one request."""
+        if not agents_mod.get(agent_id):
+            return {"ok": False, "error": "no such agent"}
+        if name:
+            served = (self.lemonade.health().get("models")) or []
+            if name not in served:
+                return {"ok": False,
+                        "error": "Lemonade is not serving '%s'." % name}
+        prof = dict(self.profile or {})
+        models = dict(prof.get("agentModels") or {})
+        if name:
+            models[agent_id] = name
+        else:
+            models.pop(agent_id, None)
+        prof["agentModels"] = models
+        self.profile = profile_mod.save(self.project_dir, prof)
+        return {"ok": True, "agentModels": self.profile.get("agentModels") or {}}
+
+    def model_for(self, agent_id):
+        """The model this agent should run on: its own override if set, else the
+        global default. None means 'use the Lemonade client's configured model'
+        so an agent with no override costs nothing extra."""
+        models = (self.profile or {}).get("agentModels") or {}
+        return models.get(agent_id) or None
+
     def refresh_config(self):
         """reload_config() plus the Lemonade re-check that has to follow it.
 
@@ -280,28 +455,105 @@ class App:
 
     # -- policy -----------------------------------------------------------
 
-    def reload_policy(self):
-        """Read policy.json from disk if it changed. Called before every
-        single tool call - the whole demo depends on an edit landing on the
-        next call without a restart."""
-        m = _mtime(self.policy_path)
-        if m != self._policy_mtime:
-            try:
-                self.policy = policy_mod.load(self.policy_path)
-                self._policy_mtime = m
-            except Exception as e:
-                self.note("warn", "policy.json could not be parsed (%s). Still "
-                                  "using the last good copy." % e)
-        return self.policy
+    def policy_path_for(self, agent_id=None):
+        """Where one agent's policy lives. None means the root policy.json,
+        which is what Phase 1, verify.py and pwsh-ladder.py all mean."""
+        if not agent_id:
+            return self.policy_path
+        rec = agents_mod.get(agent_id)
+        return os.path.join(self.project_dir, *rec["policyFile"].split("/"))
 
-    def save_policy(self, new_policy):
-        policy_mod.save(self.policy_path, new_policy)
-        self.policy = new_policy
-        self._policy_mtime = _mtime(self.policy_path)
-        return self.policy
+    def rel_policy_path(self, agent_id=None):
+        """The policy file as the UI should name it. The Policy tab says which
+        file it is editing out loud, because with more than one of them on
+        disk "Save" is otherwise a guess."""
+        return rel(self.policy_path_for(agent_id), self.project_dir)
+
+    def reload_policy(self, agent_id=None):
+        """Read a policy from disk if it changed. Called before every single
+        tool call - the whole demo depends on an edit landing on the next call
+        without a restart.
+
+        Called with no argument it behaves exactly as it always did, so the
+        callers that predate subagents did not have to change."""
+        if not agent_id:
+            m = _mtime(self.policy_path)
+            if m != self._policy_mtime:
+                try:
+                    self.policy = policy_mod.load(self.policy_path)
+                    self._policy_mtime = m
+                except Exception as e:
+                    self.note("warn", "policy.json could not be parsed (%s). "
+                                      "Still using the last good copy." % e)
+            return self.policy
+
+        path = self.policy_path_for(agent_id)
+        m = _mtime(path)
+        if m is None:
+            # No file for this agent yet - onboarding has not run, or somebody
+            # deleted it. Fall back to the root policy rather than to an empty
+            # dict: an empty policy grants nothing, and "every tool call is
+            # refused" is a confusing way to learn your file is missing.
+            return self.reload_policy()
+        if m != self._policy_mtimes.get(agent_id) or agent_id not in self._policies:
+            try:
+                self._policies[agent_id] = policy_mod.load(path)
+                self._policy_mtimes[agent_id] = m
+            except Exception as e:
+                self.note("warn", "%s could not be parsed (%s). Still using the "
+                                  "last good copy." % (rel(path, self.project_dir), e))
+                if agent_id not in self._policies:
+                    return self.reload_policy()
+        return self._policies[agent_id]
+
+    def save_policy(self, new_policy, agent_id=None):
+        path = self.policy_path_for(agent_id)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        policy_mod.save(path, new_policy)
+        if not agent_id:
+            self.policy = new_policy
+            self._policy_mtime = _mtime(path)
+            return self.policy
+        self._policies[agent_id] = new_policy
+        self._policy_mtimes[agent_id] = _mtime(path)
+        return new_policy
+
+    def working_dir(self, pol):
+        """Where the contained process starts.
+
+        It has to be somewhere the policy actually grants. A sandbox launched
+        with a cwd it cannot reach fails with 'Access is denied' before the
+        command runs at all - which reads on screen as the tool being refused,
+        when what was really refused was the working directory. That is the
+        worst failure this app can produce, because it is a real refusal
+        reported against the wrong thing.
+
+        So: derive it from the policy rather than assuming the workspace.
+        Prefer somewhere writable, fall back to somewhere readable, and finally
+        to System32, which every policy must grant or no tool could start.
+        Narrow the policy and the cwd narrows with it."""
+        ctx = self.path_ctx()
+        paths = (policy_mod.normalise(pol).get("paths") or {})
+
+        def usable(kind):
+            for raw in paths.get(kind) or []:
+                try:
+                    full = policy_mod.expand(raw, ctx)
+                except policy_mod.PolicyError:
+                    continue
+                if os.path.isdir(full):
+                    yield full
+
+        for full in usable("write"):
+            return full
+        system32 = ctx["system32"].lower()
+        for full in usable("read"):
+            if full.lower() != system32:
+                return full
+        return ctx["system32"] if os.path.isdir(ctx["system32"]) else None
 
     def compile_for(self, pol, command, cwd=None):
-        cwd = cwd or (self.workspace if os.path.isdir(self.workspace) else None)
+        cwd = cwd or self.working_dir(pol)
         return policy_mod.compile_config(
             pol, self.path_ctx(), command, cwd=cwd, caps=self.caps,
             dialect=self.dialect, capture_dir=self.capture_dir)
@@ -357,6 +609,10 @@ class App:
                       % (h.get("model"), h.get("baseUrl"),
                          h.get("routePrefix") or ""))
             self.start_warmup()
+
+        # Last, because it spawns sandboxes and there is no point doing that
+        # before we know whether this host can build one.
+        self.basecamp.start()
         return self
 
     # -- warm up ----------------------------------------------------------
@@ -436,9 +692,28 @@ def _slim(r):
     return out
 
 
+def rel(path, base):
+    """A path as a human would say it out loud, for notes and error messages."""
+    try:
+        return os.path.relpath(path, base)
+    except ValueError:
+        return path
+
+
 def _load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _save_json(path, obj):
+    """Atomic write, so a half-written config.json is never read as truncated
+    - it is read as 'not onboarded'-style garbage otherwise, and the model
+    setting is exactly the thing somebody is changing when they are impatient."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, path)
 
 
 def _mtime(path):

@@ -16,7 +16,12 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from . import agents as agents_mod
+from . import icsfeed as icsfeed_mod
+from . import mailbox as mailbox_mod
 from . import policy as policy_mod
+from . import postman as postman_mod
+from . import profile as profile_mod
 from . import tools as tools_mod
 from . import verify as verify_mod
 from .agent import Agent
@@ -28,6 +33,7 @@ PAGES = {
     "/": "/launch.html",
     "/app": "/index.html",
     "/launch": "/launch.html",
+    "/onboard": "/onboard.html",
 }
 
 _EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
@@ -70,11 +76,28 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, default=str), "application/json")
 
+    def _read_body(self):
+        """Drain the request body off the socket, always, before dispatching.
+
+        This is HTTP/1.1 with keep-alive, so the body is not optional reading:
+        bytes a handler does not consume stay in the buffer and become the
+        start of the NEXT request on that connection. The browser's postJSON
+        sends '{}' even when there is nothing to say, so every endpoint that
+        ignored its body - rescan, warmup, dryrun, profile/reset - was leaving
+        two bytes behind and the following request arrived with a method of
+        '{}GET'. It presented as a sporadic 501 that moved around depending on
+        which button you pressed, which is exactly the kind of bug that gets
+        blamed on the sandbox."""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        self._raw = self.rfile.read(n) if n > 0 else b""
+
     def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        if not n:
+        if not getattr(self, "_raw", b""):
             return {}
-        return json.loads(self.rfile.read(n).decode("utf-8"))
+        return json.loads(self._raw.decode("utf-8"))
 
     def _sse_open(self):
         self.send_response(200)
@@ -107,6 +130,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        # Before the origin check, not after: a refused request still has a
+        # body on the wire, and leaving it there corrupts the next one.
+        self._read_body()
         if not self._origin_ok():
             return self._json({"error": "cross-origin request refused"}, 403)
         try:
@@ -121,10 +147,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- GET --------------------------------------------------------------
 
+    def _agent_param(self):
+        """Which subagent this request is about.
+
+        Absent means the active one from the profile. An explicit empty string
+        means the root policy.json - that is how Phase 1 and anything written
+        before subagents existed keep addressing the file they always meant."""
+        # keep_blank_values, because "?agent=" is a meaningful request - it
+        # means the root policy.json - and the default would silently drop it
+        # and hand back the active agent's policy instead.
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query,
+                                  keep_blank_values=True)
+        if "agent" not in q:
+            return self.app.active_agent()
+        return q["agent"][0] or None
+
     def _api_get(self, path):
         app = self.app
         if path == "/api/state":
-            pol = app.reload_policy()
+            agent_id = self._agent_param()
+            pol = app.reload_policy(agent_id)
             # config.json gets the same treatment as policy.json: edited on
             # disk, picked up on the next poll. The UI should never be able to
             # disagree with the file about which model it is talking to.
@@ -133,6 +175,12 @@ class Handler(BaseHTTPRequestHandler):
                 "version": "1.0.0",
                 "projectDir": app.project_dir,
                 "workspace": app.workspace,
+                "mailbox": app.mailbox,
+                "vault": app.vault,
+                "profile": app.profile,
+                "agents": agents_mod.describe(app.profile),
+                "activeAgent": agent_id,
+                "policyFile": app.rel_policy_path(agent_id),
                 "probe": app.probe,
                 "capabilities": app.caps,
                 "dialect": app.dialect,
@@ -142,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
                 "warmup": app.warmup_state(),
                 "policy": pol,
                 "lint": policy_mod.lint(pol, app.path_ctx(), app.caps),
-                "tools": tools_mod.describe(pol),
+                "tools": tools_mod.describe(pol, agent_id),
                 "paths": app.path_ctx(),
                 "runs": app.recent_runs(),
                 "refusals": app.refusals(),
@@ -159,7 +207,23 @@ class Handler(BaseHTTPRequestHandler):
                                "warmup": app.warmup_state(),
                                "notes": app.startup_notes})
         if path == "/api/policy":
-            return self._json(app.reload_policy())
+            return self._json(app.reload_policy(self._agent_param()))
+        if path == "/api/profile":
+            return self._json({"profile": app.profile,
+                               "agents": agents_mod.describe(app.profile)})
+        if path == "/api/basecamp":
+            # What the floating bubble draws: the merged global view, plus the
+            # state of the last sandboxed sync that produced it. The counter
+            # and the refusals come from a real run under policies\base.json;
+            # the lists themselves are a host-side read, same as /api/mailbox.
+            return self._json(app.basecamp.view())
+        if path == "/api/mailbox":
+            # Host-side read, not sandboxed - exactly like Lemonade. This
+            # draws the pane so somebody can see what the agent is working on.
+            # It is NOT how the agent reads mail: that goes through the tools,
+            # into a sandbox, under the policy. If this pane and the agent
+            # disagree about what is readable, the policy is working.
+            return self._json(mailbox_mod.summary(app.mailbox))
         if path == "/api/runs":
             return self._json({"runs": app.recent_runs(200)})
         if path == "/api/refusals":
@@ -175,34 +239,97 @@ class Handler(BaseHTTPRequestHandler):
     def _api_post(self, path):
         app = self.app
 
-        if path == "/api/setup":
-            # The launch wizard's two answers. Deliberately the only write the
-            # launch page makes: it reports on the machine, it does not change
-            # it, and the one thing it does persist is the thing the person
-            # typed.
+        if path == "/api/profile":
             body = self._body()
-            try:
-                saved = app.save_setup(name=body.get("assistantName"),
-                                       backdrop=body.get("backdrop"))
-            except ValueError as e:
-                return self._json({"saved": False, "error": str(e)}, 400)
-            except OSError as e:
-                return self._json({"saved": False,
-                                   "error": "config.json could not be written "
-                                            "(%s)." % e}, 500)
-            return self._json({"saved": True, "setup": saved})
+            saved, written = app.set_profile(body)
+            return self._json({"profile": saved, "policiesWritten": written,
+                               "agents": agents_mod.describe(saved)})
+
+        if path == "/api/profile/reset":
+            profile_mod.clear(app.project_dir)
+            app.profile = None
+            app.basecamp.stop()
+            return self._json({"ok": True})
+
+        if path == "/api/model":
+            # Global model: writes config.json and warms the new one. The whole
+            # app follows, exactly like workshop\\models.py --pick but from the
+            # Settings tab.
+            res = app.set_model((self._body() or {}).get("model") or "")
+            return self._json(dict(res, warmup=app.warmup_state(),
+                                   lemonade=app.lemonade.health()),
+                              200 if res.get("ok") else 400)
+
+        if path == "/api/agent-model":
+            # Per-agent model override - the router demo. An empty model clears
+            # the override and the agent falls back to the global default.
+            body = self._body() or {}
+            res = app.set_agent_model(body.get("agent") or "",
+                                      body.get("model") or "")
+            return self._json(res, 200 if res.get("ok") else 400)
+
+        if path == "/api/basecamp/sync":
+            # "Check now". Forces a pass even if nothing in the vault has
+            # changed, because the question being asked is usually "did my
+            # policy edit land", and the fingerprint knows nothing about
+            # policy files.
+            app.basecamp.sync_now()
+            return self._json({"ok": True, "sync": app.basecamp.state})
+
+        if path == "/api/basecamp/read":
+            app.basecamp.mark_read()
+            return self._json({"ok": True})
+
+        if path == "/api/mailbox/deliver":
+            # The presenter's cue. Delivers the next scheduled message right
+            # now, whatever its clock said. Host-side, like every other
+            # delivery - see the header of postman.py.
+            msg = postman_mod.deliver_next(app.mailbox, app.profile,
+                                           (self._body() or {}).get("id"))
+            if msg:
+                app.basecamp.note_delivery(1)
+            return self._json({
+                "delivered": bool(msg),
+                "message": {"id": msg.get("id"), "from": msg.get("from"),
+                            "subject": msg.get("subject")} if msg else None,
+                "remaining": len(postman_mod.pending(app.mailbox,
+                                                     profile=app.profile)),
+            })
+
+        if path == "/api/calendar/refresh":
+            # Forced, so the button means "go and look now" rather than
+            # "tell me what you saw ten minutes ago".
+            return self._json(icsfeed_mod.refresh(app, force=True))
+
+        if path == "/api/mailbox/reset-clock":
+            # Rehearse the whole session twice on one machine without
+            # deleting the mailbox.
+            when = postman_mod.reset_anchor(app.mailbox)
+            return self._json({"ok": True, "anchor": when})
 
         if path == "/api/policy":
+            agent_id = self._agent_param()
             incoming = self._body()
             lint = policy_mod.lint(incoming, app.path_ctx(), app.caps)
             if any(n["level"] == "error" for n in lint):
                 return self._json({"saved": False, "lint": lint}, 400)
-            saved = app.save_policy(incoming)
-            return self._json({"saved": True, "policy": saved, "lint": lint})
+            saved = app.save_policy(incoming, agent_id)
+            return self._json({"saved": True, "policy": saved, "lint": lint,
+                               "policyFile": app.rel_policy_path(agent_id)})
+
+        if path == "/api/policy/preset":
+            body = self._body()
+            agent_id = body.get("agent") or self._agent_param()
+            saved = app.apply_preset(agent_id, body.get("preset"))
+            if saved is None:
+                return self._json({"error": "no such preset"}, 404)
+            return self._json({"saved": True, "policy": saved,
+                               "lint": policy_mod.lint(saved, app.path_ctx(),
+                                                       app.caps)})
 
         if path == "/api/policy/preview":
             body = self._body()
-            pol = body.get("policy") or app.reload_policy()
+            pol = body.get("policy") or app.reload_policy(self._agent_param())
             cmd = body.get("command") or tools_mod.shell_cmd("dir /b")
             try:
                 cfg, notes = app.compile_for(pol, cmd)
@@ -212,7 +339,7 @@ class Handler(BaseHTTPRequestHandler):
                                "lint": policy_mod.lint(pol, app.path_ctx(), app.caps)})
 
         if path == "/api/policy/dryrun":
-            pol = app.reload_policy()
+            pol = app.reload_policy(self._agent_param())
             cfg, notes = app.compile_for(pol, tools_mod.shell_cmd("ver"))
             run = app.mxc.execute(cfg, label="policy dry-run", dry_run=True)
             app.record_run(run)
@@ -265,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
                            "Loading %s into memory - the first answer will be "
                            "slow, the rest will not." % (w.get("model") or "the model")})
 
-            agent = Agent(app)
+            agent = Agent(app, body.get("agent"))
             try:
                 agent.turn(body.get("message") or "",
                            body.get("history") or [], self._sse)
@@ -279,7 +406,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/tool":
             body = self._body()
             self._sse_open()
-            agent = Agent(app)
+            agent = Agent(app, body.get("agent"))
             try:
                 text = agent.call_tool(body.get("name") or "",
                                        body.get("arguments") or {}, self._sse)
