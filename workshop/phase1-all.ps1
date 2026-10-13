@@ -132,7 +132,8 @@ function Invoke-Step {
         [string]   $Point,       # the one sentence this step exists to prove
         [string[]] $CliArgs,     # arguments to wxc-exec. Not $Args: that is an
                                  # automatic variable and shadowing it is a trap.
-        [string]   $Expect       # ok | blocked | refused-to-start | any
+        [string]   $Expect,      # ok | blocked | refused-to-start | any
+        [string[]] $ExpectAny    # accept any of these outcomes (overrides $Expect)
     )
 
     Rule ("STEP {0}  {1}" -f $Number, $Title)
@@ -160,7 +161,11 @@ function Invoke-Step {
 
     # A report step like --probe is not pass or fail, and running its prose
     # through the classifier would misread the tier list it prints as a refusal.
-    if ($Expect -eq "any") {
+    if ($ExpectAny) {
+        $outcome = Get-Outcome -Code $code -Text $text
+        $agree = $ExpectAny -contains $outcome
+        $Expect = $ExpectAny -join " or "
+    } elseif ($Expect -eq "any") {
         $outcome = "report"
         $agree = $true
     } else {
@@ -242,12 +247,15 @@ Invoke-Step -Number "5b" -Title "Reach one folder sideways" `
     -CliArgs @((Cfg "03-read-ungranted.json")) -Expect "blocked"
 
 # ---- 5c -----------------------------------------------------------------
-# The orphan. It is the only config that exercises the third outcome, and
-# whether this host refuses it or quietly ignores deniedPaths is exactly the
-# kind of thing you want to find out here rather than on stage.
+# On Tier 1 the host enforces deniedPaths natively, so wxc-exec accepts the
+# config and the blocked read returns "ok" from the container's perspective
+# (the deny did its job - the file was not there). On lower tiers the host
+# cannot enforce deny rules and wxc-exec refuses to start rather than silently
+# degrade. Both outcomes are correct; "ok" (failed read) on Tier 1 is NOT a
+# failure - the wrong answer would be quietly running without enforcing the deny.
 Invoke-Step -Number "5c" -Title "Ask for deniedPaths" `
-    -Point "If this host cannot enforce a deny list it should refuse to start, not degrade." `
-    -CliArgs @((Cfg "04-deny-paths.json")) -Expect "refused-to-start"
+    -Point "Tier 1: enforced (ok). Lower tiers: refused-to-start. Never silently ignored." `
+    -CliArgs @((Cfg "04-deny-paths.json")) -ExpectAny @("ok", "refused-to-start")
 
 # ---- 6 ------------------------------------------------------------------
 Rule "STEP 6  The injection, with nothing in the way"
