@@ -1,46 +1,65 @@
 # Sanctum – Workshop Quickstart
 
-## 1. Start the app
+---
+
+## Step 1 — Start the app
+
+Open a PowerShell terminal and run:
 
 ```powershell
 cd C:\Users\<you>\local-ai-workshop\Sanctum
 python run.py
 ```
 
-Leave this terminal open. You'll see the URLs printed once it's ready.
+Leave this terminal open and running the whole time.
 
 ---
 
-## 2. Phase 1 — prove the sandbox by hand
+## Step 2 — Open Phase 1 in your browser
 
-Open `http://127.0.0.1:7701/phase1` in your browser.
+Go to: **`http://127.0.0.1:7701/phase1`**
 
-Open a **second PowerShell terminal** and follow the steps on screen in order:
-
-1. **Build the lab** — creates `C:\SanctumLab` with sample files and a poisoned document
-2. **Probe the host** — asks what this machine can actually enforce
-3. **Validate without running** — dry-run a config, nothing spawns
-4. **Spawn one for real** — first real sandbox
-5. **Grant a path, then reach past it** — watch the policy block a read
-6. **Injection, unsandboxed** — the secret prints; nothing stopped it
-7. **Injection, inside the sandbox** — same attack, key never prints
-8. **Network** — egress denied, then allowed *(if time)*
-
-When all steps are done, come back to the browser.
+This page shows 8 numbered steps with the exact commands for your machine.
 
 ---
 
-## 3. Phase 2 — put an agent in front of the sandbox
+## Step 3 — Open a second terminal and follow Phase 1
 
-Click **Phase 2 →** in the browser (or go to `http://127.0.0.1:7701/`).
+Open a **second PowerShell terminal**:
 
-- **First time:** click **Set up →** to name your agent and configure it
-- **Returning:** click **Open →** to go straight to the app
+```powershell
+cd C:\Users\<you>\local-ai-workshop\Sanctum
+```
 
-Chat with your agent. Every tool call runs in the same sandbox you just proved by hand.
+Now go through each step on the browser page, copying each command into this terminal and running it before moving to the next. The page explains what each step proves.
+
+Steps 1–8 in order:
+
+1. Build the lab
+2. Probe the host
+3. Validate without running
+4. First real sandbox
+5. Grant a path, then reach past it (three variants)
+6. Injection — unsandboxed *(the secret prints)*
+7. Injection — sandboxed *(the secret never prints)*
+8. Network *(if time)*
+
+When you have finished all 8 steps, close the Phase 1 page.
 
 ---
 
-## Stop
+## Step 4 — Move to Phase 2
 
-`Ctrl-C` in the run.py terminal.
+Go to: **`http://127.0.0.1:7701/`**
+
+**First time here:** click **Set up →**, name your agent, then come back and click **Open →**
+
+**Already set up:** click **Open →**
+
+You are now in the app. Try one of the starter tasks listed in the chat.
+
+---
+
+## To stop
+
+Press `Ctrl-C` in the first terminal.
