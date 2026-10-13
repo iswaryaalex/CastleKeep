@@ -247,15 +247,14 @@ Invoke-Step -Number "5b" -Title "Reach one folder sideways" `
     -CliArgs @((Cfg "03-read-ungranted.json")) -Expect "blocked"
 
 # ---- 5c -----------------------------------------------------------------
-# On Tier 1 the host enforces deniedPaths natively, so wxc-exec accepts the
-# config and the blocked read returns "ok" from the container's perspective
-# (the deny did its job - the file was not there). On lower tiers the host
-# cannot enforce deny rules and wxc-exec refuses to start rather than silently
-# degrade. Both outcomes are correct; "ok" (failed read) on Tier 1 is NOT a
-# failure - the wrong answer would be quietly running without enforcing the deny.
+# The command tries to read the private file. On Tier 1 the host enforces the
+# deny rule and the read is stopped (blocked). On lower tiers that cannot
+# enforce deny rules, wxc-exec refuses to build the container at all
+# (refused-to-start). Either is correct enforcement. The one wrong answer is
+# "ok" - that would mean the deny was silently ignored and the file was readable.
 Invoke-Step -Number "5c" -Title "Ask for deniedPaths" `
-    -Point "Tier 1: enforced (ok). Lower tiers: refused-to-start. Never silently ignored." `
-    -CliArgs @((Cfg "04-deny-paths.json")) -ExpectAny @("ok", "refused-to-start")
+    -Point "Tier 1: read blocked by deny rule. Lower tiers: refused-to-start. Never ok." `
+    -CliArgs @((Cfg "04-deny-paths.json")) -ExpectAny @("blocked", "refused-to-start")
 
 # ---- 6 ------------------------------------------------------------------
 Rule "STEP 6  The injection, with nothing in the way"

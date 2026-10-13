@@ -2,7 +2,7 @@
   "version": "0.8.0-alpha",
   "containment": "processcontainer",
   "process": {
-    "commandLine": "\"C:\\Windows\\System32\\cmd.exe\" /d /c echo this run will not start",
+    "commandLine": "\"C:\\Windows\\System32\\cmd.exe\" /d /c type \"C:\\SanctumLab\\private\\api-key.txt\"",
     "timeout": 30000
   },
   "ui": {
