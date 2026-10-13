@@ -54,7 +54,7 @@ rather than clearing the folder once it has merged.
 ## Twenty minutes before anyone arrives
 
 ```
-cd <path-to>\castlekeep
+cd <path-to>\sanctum
 python verify.py
 ```
 

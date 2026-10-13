@@ -26,7 +26,7 @@ You need two things on the box.
 
 The MXC executables are already here, in `bin\`, for x64 and arm64. CastleKeep
 invokes `bin\x64\wxc-exec.exe` and nothing outside this folder, so you can copy
-`castlekeep\` to another machine and it still runs. `bin\README.md` says what
+`sanctum\` to another machine and it still runs. `bin\README.md` says what
 each executable is and where they came from. To use a different build, point
 `mxc.binDir` or `mxc.exePath` in `config.json` at it, or set `MXC_BIN_DIR`.
 CastleKeep tells you at startup if it cannot find an executor.

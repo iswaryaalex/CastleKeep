@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "vault-seed.json")
 API = "https://api.github.com"
 
-UA = "CastleKeep-workshop-snapshot (https://github.com/iswaryaalex/CastleKeep)"
+UA = "CastleKeep-workshop-snapshot (https://github.com/iswaryaalex/Sanctum)"
 
 
 def _get(path, params=None):

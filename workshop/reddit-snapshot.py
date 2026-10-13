@@ -71,7 +71,7 @@ OUT = os.path.join(HERE, "vault-seed.json")
 # Reddit refuses a default urllib User-Agent, and theirs is the only API in
 # this repo that insists on being told who is calling.
 UA = ("CastleKeep-workshop-snapshot/1.0 "
-      "(+https://github.com/iswaryaalex/CastleKeep; read-only, presenter tool)")
+      "(+https://github.com/iswaryaalex/Sanctum; read-only, presenter tool)")
 
 TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
 API = "https://oauth.reddit.com"
