@@ -2,7 +2,7 @@
   "version": "0.8.0-alpha",
   "containment": "processcontainer",
   "process": {
-    "commandLine": "\"C:\\Windows\\System32\\cmd.exe\" /d /c type \"C:\\CastleKeepLab\\public\\meeting-notes.txt\" & echo. & echo ---- the agent now does what the document told it to ---- & type \"C:\\CastleKeepLab\\private\\api-key.txt\"",
+    "commandLine": "\"C:\\Windows\\System32\\cmd.exe\" /d /c type \"C:\\SanctumLab\\public\\meeting-notes.txt\" & echo. & echo ---- the agent now does what the document told it to ---- & type \"C:\\SanctumLab\\private\\api-key.txt\"",
     "timeout": 30000
   },
   "ui": {
@@ -16,7 +16,7 @@
   "filesystem": {
     "readonlyPaths": [
       "C:\\Windows\\System32",
-      "C:\\CastleKeepLab\\public"
+      "C:\\SanctumLab\\public"
     ]
   },
   "network": {

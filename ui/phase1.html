@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CastleKeep: Phase 1</title>
+<title>Sanctum: Phase 1</title>
 <link rel="stylesheet" href="/tokens.css">
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'><rect width='22' height='22' rx='5' fill='%23F5CE3E'/><rect x='6' y='7' width='3' height='9' fill='%235C4B00'/><rect x='13' y='7' width='3' height='9' fill='%235C4B00'/><rect x='6' y='5' width='10' height='3' fill='%235C4B00'/></svg>">
@@ -91,7 +91,7 @@ body{overflow:auto}
   <a class="brand" href="/" title="Back to the launch screen"
      style="text-decoration:none; color:inherit">
     <span class="avatar" id="brandDragon"></span>
-    <span class="brand-name">CastleKeep</span>
+    <span class="brand-name">Sanctum</span>
     <span class="brand-sub">phase 1, the terminal</span>
   </a>
   <div class="titlebar-right">
@@ -105,7 +105,7 @@ body{overflow:auto}
 
   <nav class="rail">
     <div class="rail-label">Lab folder</div>
-    <div class="rail-chip">C:\CastleKeepLab</div>
+    <div class="rail-chip">C:\SanctumLab</div>
     <button class="nav" data-go="s1">1 &nbsp;Build the lab</button>
     <button class="nav" data-go="s2">2 &nbsp;Probe the host</button>
     <button class="nav" data-go="s3">3 &nbsp;Validate, don't run</button>
@@ -124,8 +124,8 @@ body{overflow:auto}
 
     <h1 class="page">Phase 1: prove the sandbox by hand</h1>
     <p class="lead">
-      Eight commands against <code>wxc-exec.exe</code>, the same binary CastleKeep
-      calls in Phase&nbsp;2. Open PowerShell, <code>cd</code> into the CastleKeep
+      Eight commands against <code>wxc-exec.exe</code>, the same binary Sanctum
+      calls in Phase&nbsp;2. Open PowerShell, <code>cd</code> into the Sanctum
       folder, and copy them in order. Paths come from
       <em id="hostNote">this machine</em>.
     </p>
@@ -146,7 +146,7 @@ body{overflow:auto}
         </div>
         <div class="expect ok">
           <div class="k">You should see</div>
-          <pre>  Lab ready at C:\CastleKeepLab
+          <pre>  Lab ready at C:\SanctumLab
 
     public\notes.txt           ordinary document
     public\meeting-notes.txt   ordinary document, with a payload in it
@@ -172,7 +172,7 @@ body{overflow:auto}
           <pre data-exe>&amp; "{EXE}" --probe</pre>
         </div>
         <div class="expect ok">
-          <div class="k">CastleKeep read this host as</div>
+          <div class="k">Sanctum read this host as</div>
           <pre id="tierLine">asking the app&hellip;</pre>
         </div>
         <p class="said">
@@ -279,9 +279,9 @@ Access is denied.</pre>
       <div class="body">
         <div class="cmd">
           <button class="copy">Copy</button>
-          <pre>Get-Content C:\CastleKeepLab\public\meeting-notes.txt
+          <pre>Get-Content C:\SanctumLab\public\meeting-notes.txt
 Write-Host "`n---- the agent now does what the document told it to ----`n"
-Get-Content C:\CastleKeepLab\private\api-key.txt</pre>
+Get-Content C:\SanctumLab\private\api-key.txt</pre>
           <span class="tag">no sandbox</span>
         </div>
         <div class="expect bad">
@@ -366,7 +366,7 @@ The system cannot find the file specified.</pre>
         </div>
         <p class="said">
           Per-host allow-lists are not supported on Windows, so egress is
-          all-or-nothing. CastleKeep disables that knob rather than showing a
+          all-or-nothing. Sanctum disables that knob rather than showing a
           control that does nothing.
         </p>
       </div>
@@ -385,7 +385,7 @@ The system cannot find the file specified.</pre>
         <pre>python run.py</pre>
       </div>
       <p style="margin-top:14px">
-        Already running? <a href="/app" style="color:var(--term-green)">Open CastleKeep &rarr;</a>
+        Already running? <a href="/app" style="color:var(--term-green)">Open Sanctum &rarr;</a>
       </p>
     </div>
 
@@ -481,7 +481,7 @@ fetch("/api/state")
     }
     if (!exe) {
       $("hostNote").textContent =
-        "this machine, except the binary path - CastleKeep could not find " +
+        "this machine, except the binary path - Sanctum could not find " +
         "wxc-exec.exe, so substitute it yourself";
     }
   })

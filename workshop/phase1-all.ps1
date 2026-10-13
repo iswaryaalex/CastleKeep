@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     [string] $Exe,
-    [string] $Lab = "C:\CastleKeepLab",
+    [string] $Lab = "C:\SanctumLab",
     [switch] $SkipLab,
     [switch] $SkipHostAttack,
     [string] $LogFile
@@ -190,7 +190,7 @@ function Cfg { param([string] $Name) Join-Path $WorkshopDir $Name }
 
 $ExePath = Find-Exe
 
-Rule "CastleKeep Phase 1, every step back to back"
+Rule "Sanctum Phase 1, every step back to back"
 Say ("  binary     {0}" -f $ExePath) "Gray"
 Say ("  lab        {0}" -f $Lab) "Gray"
 Say ("  transcript {0}" -f $LogFile) "Gray"

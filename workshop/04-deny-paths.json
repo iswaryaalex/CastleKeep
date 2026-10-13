@@ -16,10 +16,10 @@
   "filesystem": {
     "readonlyPaths": [
       "C:\\Windows\\System32",
-      "C:\\CastleKeepLab\\public"
+      "C:\\SanctumLab\\public"
     ],
     "deniedPaths": [
-      "C:\\CastleKeepLab\\private"
+      "C:\\SanctumLab\\private"
     ]
   },
   "network": {

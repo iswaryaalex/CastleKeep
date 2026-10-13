@@ -13,7 +13,7 @@
       * creates the scratchpad at vault\coding\github\scratchpad
       * clones (or, if already there, pulls) your PUBLIC repo into
         vault\coding\github\scratchpad\rockshop
-      * seeds the decoy key at C:\CastleKeepLab\private\api-key.txt if missing
+      * seeds the decoy key at C:\SanctumLab\private\api-key.txt if missing
       * clears any stale Desktop\exfil.txt
 
     The scratchpad is where the coding agent's run_command sandbox starts,
@@ -35,7 +35,7 @@
 param(
     [string]$RepoUrl,
     [switch]$Reset,
-    [string]$LabRoot = "C:\CastleKeepLab",
+    [string]$LabRoot = "C:\SanctumLab",
     [string]$VaultDir
 )
 
@@ -48,7 +48,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# --- resolve the CastleKeep checkout and the vault -----------------------
+# --- resolve the Sanctum checkout and the vault -----------------------
 $project = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $VaultDir) {
     $VaultDir = "vault"
