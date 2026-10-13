@@ -20,75 +20,62 @@
 body{overflow:auto; display:grid; place-items:center; min-height:100vh;
   padding:48px 20px}
 
-*{box-sizing:border-box}
-html{height:100%}
-body{
-  margin:0; overflow:auto; display:grid; place-items:center; min-height:100vh;
-  background:var(--bg); color:var(--ink); font-family:var(--sans);
-  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
-  padding:20px 24px 44px;
-}
-h2{margin:0}
-p{margin:0}
-button{font:inherit}
-/* Only lock scrolling when the panel is certain to fit. Below this the checks
-   step is taller than the viewport and a locked body would hide the buttons. */
-@media (min-height:800px){ body{height:100%; overflow:hidden} }
+.launch{width:100%; max-width:520px}
 
-#backdrop{
-  position:fixed; inset:0; z-index:0; background-repeat:repeat; background-position:center;
-  opacity:0; transition:opacity .45s ease; pointer-events:none;
-}
-#backdrop.on{opacity:1}
-/* A flat wash, not a gradient: the backdrops are already pale and this only
-   needs to keep body text off the busiest part of the tile. */
-#backdrop::after{content:""; position:absolute; inset:0; background:rgba(250,248,241,.30)}
+.hero{display:flex; align-items:center; gap:14px; margin-bottom:24px}
+.mark{width:52px; height:52px; border-radius:14px; display:grid;
+  place-items:center; background:var(--brand-soft);
+  border:1px solid var(--brand-line); flex:0 0 52px}
+.mark svg{width:42px; height:42px}
+.wordmark{font-size:22px; font-weight:800; letter-spacing:-.02em; line-height:1.2}
+.tagline{color:var(--muted); font-size:12.5px; margin-top:3px}
 
-/* ------------------------------------------------------------- the panel */
-.panel{
-  position:relative; z-index:1; width:100%; max-width:560px;
-  background:var(--surface); border:1px solid var(--border); border-radius:14px;
-  box-shadow:0 1px 2px rgba(27,26,22,.04), 0 10px 34px rgba(27,26,22,.055);
-  padding:30px 34px 24px; display:flex; flex-direction:column;
-}
+.card{background:var(--surface); border:1px solid var(--border);
+  border-radius:12px; box-shadow:var(--shadow); margin-bottom:14px}
+.card h2{font-size:10px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint); padding:14px 18px 2px}
 
-/* ------------------------------------------------------------- the dragon */
-.stage{display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:4px}
-.tile{
-  width:92px; height:92px; border-radius:18px;
-  background:var(--brand-soft); border:1px solid var(--brand-line);
-  display:flex; align-items:center; justify-content:center;
-  transition:width .32s ease, height .32s ease, border-radius .32s ease;
-}
-/* The checks step is the tall one, so the dragon gives up some room for it. */
-.panel.compact .tile{width:62px; height:62px; border-radius:14px}
-.tile svg{display:block; width:78%; height:78%; image-rendering:pixelated; overflow:visible}
-.who{font-family:var(--serif); font-size:15px; color:var(--faint); min-height:21px}
-.who b{color:var(--muted); font-weight:600}
+.row{display:flex; gap:12px; align-items:flex-start; padding:11px 18px}
+.row + .row{border-top:1px solid var(--border)}
+.card h2 + .row{padding-top:8px}
+.dot{flex:0 0 9px; width:9px; height:9px; border-radius:5px; margin-top:5px;
+  background:var(--border2); transition:background .25s}
+.dot.ok{background:var(--primary)}
+.dot.bad{background:var(--deny)}
+.dot.busy{background:var(--brand-dark); animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1} 50%{opacity:.25}}
+.row .txt{flex:1; min-width:0}
+.row .t{font-size:12.5px; font-weight:700}
+.row.ok .t{color:var(--primary-dark)}
+.row .d{font-size:12px; color:var(--muted); margin-top:2px; line-height:1.5;
+  word-break:break-word}
+.row .d b{color:var(--ink2); font-weight:600}
+.row .d.path{font-family:var(--mono); font-size:10.5px; color:var(--faint)}
+.sugg{margin-top:6px; display:flex; flex-wrap:wrap; gap:4px}
+.sugg code{font-size:10.5px}
 
-/* The right wing swings about the point where it meets the body. steps(1,end)
-   keeps it a two-frame flap, because pixel art that tweens stops looking like
-   pixel art halfway through the first frame. */
-.d-wing{transform-box:view-box; transform-origin:15px 15.5px; transform:rotate(0deg)}
-.waving .d-wing{animation:wave .5s steps(1,end) infinite alternate}
-@keyframes wave{ from{transform:rotate(-5deg)} to{transform:rotate(-30deg)} }
-/* Two real frames, not a fade: .d-shut draws the same cells from the sleeping
-   sprite, so the face never has a hole in it mid-blink. */
-.d-shut{opacity:0}
-.d-open{animation:eyeopen 5.4s steps(1,end) infinite}
-.d-shut{animation:eyeshut 5.4s steps(1,end) infinite}
-@keyframes eyeopen{0%,95%{opacity:1} 95.5%,98%{opacity:0} 98.5%,100%{opacity:1}}
-@keyframes eyeshut{0%,95%{opacity:0} 95.5%,98%{opacity:1} 98.5%,100%{opacity:0}}
-@media (prefers-reduced-motion:reduce){
-  .waving .d-wing, .d-open, .d-shut{animation:none}
-  .d-shut{opacity:0}
-}
+/* the two steps */
+.step{display:flex; gap:13px; align-items:center; padding:15px 18px}
+.step + .step{border-top:1px solid var(--border)}
+.n{flex:0 0 24px; height:24px; border-radius:7px; background:var(--surface3);
+  color:var(--ink2); display:grid; place-items:center; font-size:11.5px;
+  font-weight:800}
+.step.done .n{background:var(--primary-soft); color:var(--primary-dark)}
+.step .txt{flex:1; min-width:0}
+.step .t{font-size:13.5px; font-weight:700}
+.step .d{font-size:12px; color:var(--muted); margin-top:2px}
 
-/* ---------------------------------------------------------------- pips */
-.pips{display:flex; gap:6px; justify-content:center; margin:14px 0 2px; min-height:4px}
-.pips i{width:26px; height:4px; border-radius:3px; background:var(--border); transition:background .3s ease}
-.pips i.at{background:var(--ink)}
-.pips i.past{background:var(--primary)}
+.act{height:34px; padding:0 15px; border-radius:9px; font-size:12.5px;
+  font-weight:700; text-decoration:none; display:inline-flex; align-items:center;
+  justify-content:center; white-space:nowrap; cursor:pointer;
+  border:1px solid var(--border2); background:var(--surface); color:var(--ink2)}
+.act:hover{background:var(--surface3)}
+.act.go{background:var(--ink); border-color:var(--ink); color:#fff}
+.act.go:hover{background:#000}
+.act.ready{background:var(--primary); border-color:var(--primary); color:#fff}
+.act.ready:hover{background:var(--primary-dark)}
+.act.wait{color:var(--muted); cursor:progress; animation:breathe 1.6s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1} 50%{opacity:.42}}
 
 .note{font-size:11.5px; color:var(--muted); text-align:center; margin-top:4px;
   min-height:17px}
@@ -100,7 +87,7 @@ button{font:inherit}
 </head>
 <body class="themed">
 
-<main class="panel" id="panel">
+<div class="launch">
 
   <div class="hero">
     <div class="mark" id="mark"></div>
@@ -110,63 +97,38 @@ button{font:inherit}
     </div>
   </div>
 
-  <div class="pips" id="pips"></div>
+  <div class="card">
+    <h2>Checking this machine</h2>
 
-  <div class="steps" id="steps">
-
-    <section class="step s0 live" data-i="0">
-      <h2>CastleKeep</h2>
-      <p class="lede">A local assistant that can only do what you let it.<br>Four short steps and it is yours.</p>
-    </section>
-
-    <section class="step" data-i="1">
-      <h2>Name your assistant</h2>
-      <p class="lede">The name it answers to in chat and in the run log.</p>
-      <div class="label">Name</div>
-      <input type="text" id="name" value="Max" maxlength="24" autocomplete="off" spellcheck="false">
-      <div class="chips" id="namechips"></div>
-    </section>
-
-    <section class="step" data-i="2">
-      <h2>Pick a backdrop</h2>
-      <p class="lede">Only changes how the window looks. None is fine.</p>
-      <div class="label">Backdrop</div>
-      <div class="swatches" id="swatches"></div>
-    </section>
-
-    <section class="step" data-i="3">
-      <h2>Set up this machine</h2>
-      <p class="lede">Agents and Lemonade Server on Ryzen AI. Nothing is installed or changed here.</p>
-      <div class="machine" id="machine"><b id="plat">Reading this machine</b></div>
-      <div class="rows" id="rows"></div>
-      <div class="prog"><i id="bar"></i></div>
-      <div class="progtext" id="progtext">Starting checks.</div>
-    </section>
-
-    <section class="step" data-i="4">
-      <h2 id="s4title">Ready</h2>
-      <p class="lede">Two ways in. They use the same sandbox.</p>
-      <div style="margin-top:14px">
-        <div class="door">
-          <div class="dnum">1</div>
-          <div class="dtext">
-            <div class="dtitle">Phase 1, the terminal</div>
-            <div class="dsub">Drive the sandbox by hand. No agent, no model.</div>
-          </div>
-          <button class="btn dark sm" id="goPhase1">Start</button>
-        </div>
-        <div class="door">
-          <div class="dnum">2</div>
-          <div class="dtext">
-            <div class="dtitle" id="d2title">CastleKeep</div>
-            <div class="dsub" id="d2sub">The same sandbox, with an agent in front of it.</div>
-          </div>
-          <button class="btn go sm" id="goApp">Open</button>
-        </div>
+    <div class="row" id="rHarness">
+      <span class="dot" id="dHarness"></span>
+      <div class="txt">
+        <div class="t">Sandbox</div>
+        <div class="d" id="tHarness">asking the host what it can enforce</div>
+        <div class="d path" id="tExe"></div>
       </div>
-      <p class="hint">First time through, start with Phase 1.</p>
-    </section>
+    </div>
 
+    <div class="row" id="rModel">
+      <span class="dot" id="dModel"></span>
+      <div class="txt">
+        <div class="t">Lemonade</div>
+        <div class="d" id="tModel">looking for the server</div>
+        <div class="sugg" id="tSugg"></div>
+      </div>
+    </div>
+
+    <div class="row" id="rWarm">
+      <span class="dot" id="dWarm"></span>
+      <div class="txt">
+        <div class="t">Model</div>
+        <div class="d" id="tWarm">waiting on the model check</div>
+      </div>
+    </div>
+
+    <div class="retry hidden" id="retryWrap">
+      <button class="act" id="retry">Check again</button>
+    </div>
   </div>
 
   <div class="card">
@@ -191,168 +153,102 @@ button{font:inherit}
   <p class="note" id="note"></p>
   <p class="redo hidden" id="redo"><a href="/onboard">Run setup again &rarr;</a></p>
 
-<div class="foot">
-  <span id="footnote">Everything on this page is read from this machine.</span>
-  <button class="link" id="redo" hidden>Start over</button>
 </div>
 
 <script type="module">
-import { wavingDragon } from "/dragonwave.js";
+import { dragonSvg } from "/dragon.js";
 
-/* =======================================================  the dragon  === */
-const panel = document.getElementById("panel");
-document.getElementById("tile").innerHTML = wavingDragon();
+const $ = (id) => document.getElementById(id);
 
-let waveTimer = null;
-function wave(ms){
-  panel.classList.add("waving");
-  clearTimeout(waveTimer);
-  if(ms) waveTimer = setTimeout(() => panel.classList.remove("waving"), ms);
+let dragonState = null;
+function setDragon(s) {
+  if (s === dragonState) return;
+  dragonState = s;
+  $("mark").innerHTML = dragonSvg(s);
 }
-function stopWave(){ clearTimeout(waveTimer); panel.classList.remove("waving"); }
+setDragon("asleep");
 
-/* ====================================================  backdrops  ======= */
-/* Drawn here as data URIs rather than shipped as image files: three small
-   generators are less to carry than three PNGs, and they stay crisp at any
-   scale. Ids match BACKDROP_IDS in core/app.py. */
-const uri = svg => 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
-
-function parchment(){
-  let s = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">';
-  s += '<rect width="240" height="240" fill="#F7F3E7"/>';
-  /* Fixed seed so the tile is the same every load, and fine grain only - any
-     mark big enough to read as a shape would make the 240px seam visible. */
-  let seed = 7;
-  const r = () => { seed = (seed*1103515245 + 12345) % 2147483648; return seed/2147483648; };
-  for(let i=0;i<560;i++){
-    const x=(r()*240).toFixed(1), y=(r()*240).toFixed(1), o=(0.05+r()*0.09).toFixed(3);
-    s += '<circle cx="'+x+'" cy="'+y+'" r="'+(0.28+r()*0.55).toFixed(2)+'" fill="#A89468" fill-opacity="'+o+'"/>';
-  }
-  return s + '</svg>';
-}
-function stonework(){
-  /* Two courses in a 64px tile, not three in 96. With three, rows 0 and 2 share
-     an offset and the running bond breaks at every tile edge. */
-  let s = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="64">';
-  s += '<rect width="160" height="64" fill="#F6F3EA"/>';
-  for(let row=0; row<2; row++){
-    const off = (row === 1) ? -40 : 0, y = row*32;
-    for(let k=-1;k<4;k++){
-      const x = off + k*80;
-      s += '<rect x="'+(x+2.5)+'" y="'+(y+2.5)+'" width="75" height="27" rx="3" fill="none" stroke="#E4DECE" stroke-width="1.2"/>';
-    }
-  }
-  return s + '</svg>';
-}
-function hillside(){
-  let s = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520">';
-  s += '<rect width="900" height="520" fill="#F8F6EE"/>';
-  s += '<path d="M0 400 C 150 330, 290 410, 440 372 C 600 330, 740 400, 900 352 L900 520 L0 520 Z" fill="#EDF1E8"/>';
-  s += '<path d="M0 452 C 170 404, 320 470, 470 438 C 640 402, 760 462, 900 424 L900 520 L0 520 Z" fill="#E5ECDE"/>';
-  s += '<path d="M0 496 C 200 462, 360 508, 520 482 C 690 456, 790 500, 900 480 L900 520 L0 520 Z" fill="#DDE6D4"/>';
-  return s + '</svg>';
+function esc(s) {
+  return String(s === undefined || s === null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const BACKDROPS = [
-  {id:"none",      name:"None",      css:"none",           size:"auto"},
-  {id:"parchment", name:"Parchment", css:uri(parchment()), size:"240px 240px"},
-  {id:"stone",     name:"Stonework", css:uri(stonework()), size:"160px 64px"},
-  {id:"hills",     name:"Hillside",  css:uri(hillside()),  size:"cover"}
-];
+/* Elapsed is counted from the first poll that said warming, not from the
+   server's own timestamp, so a page reloaded mid-load does not claim the
+   read only just began. */
+let warmSince = null;
+let ready = false;
 
-const bdLayer = document.getElementById("backdrop");
-const swWrap  = document.getElementById("swatches");
-let chosenBackdrop = "none";
-
-BACKDROPS.forEach(b => {
-  const el = document.createElement("button");
-  el.className = "sw"; el.type = "button"; el.dataset.id = b.id;
-  el.setAttribute("aria-pressed", "false");
-  const th = document.createElement("span");
-  th.className = "thumb";
-  if(b.css !== "none"){
-    th.style.backgroundImage = b.css;
-    th.style.backgroundSize = b.size === "cover" ? "cover" : b.size;
-  }
-  const cap = document.createElement("span");
-  cap.className = "cap"; cap.textContent = b.name;
-  el.append(th, cap);
-  el.addEventListener("click", () => pickBackdrop(b.id));
-  swWrap.appendChild(el);
-});
-
-function pickBackdrop(id){
-  const b = BACKDROPS.find(x => x.id === id) || BACKDROPS[0];
-  chosenBackdrop = b.id;
-  for(const c of swWrap.children){
-    c.setAttribute("aria-pressed", c.dataset.id === b.id ? "true" : "false");
-  }
-  if(b.css === "none"){
-    bdLayer.classList.remove("on");
-    bdLayer.style.backgroundImage = "none";
-    return;
-  }
-  bdLayer.style.backgroundImage  = b.css;
-  bdLayer.style.backgroundSize   = b.size === "cover" ? "cover" : b.size;
-  bdLayer.style.backgroundRepeat = b.size === "cover" ? "no-repeat" : "repeat";
-  bdLayer.classList.add("on");
+/* kind, not state: "state" in this file means a warm-up state the server
+   emitted, and having two of them made it easy to compare the wrong one. */
+function mark(row, kind) {        // kind: "ok" | "bad" | "busy" | ""
+  $("d" + row).className = "dot " + kind;
+  $("r" + row).className = "row" + (kind === "ok" ? " ok" : "");
 }
-pickBackdrop("none");
 
-/* =========================================================  the name  === */
-const nameInput = document.getElementById("name");
-const chipWrap  = document.getElementById("namechips");
-const whoEl     = document.getElementById("who");
+function render(st) {
+  const probe = st.probe || {};
+  const lem = st.lemonade || {};
+  const w = st.warmup || {};
 
-["Max","Keeper","Scout","Pip","Bramble"].forEach(n => {
-  const b = document.createElement("button");
-  b.type = "button"; b.className = "chip"; b.textContent = n;
-  b.addEventListener("click", () => { nameInput.value = n; syncName(); wave(1400); });
-  chipWrap.appendChild(b);
-});
-
-function assistantName(){ return nameInput.value.trim() || "Max"; }
-function syncName(){
-  for(const c of chipWrap.children){
-    c.setAttribute("aria-pressed", c.textContent === nameInput.value.trim() ? "true" : "false");
+  // ---- sandbox
+  if (st.mxcExe && probe.available) {
+    mark("Harness", "ok");
+    $("tHarness").textContent = "Ready on this host.";
+    $("tExe").textContent = st.mxcExe;
+  } else {
+    mark("Harness", "bad");
+    $("tHarness").textContent = st.mxcError || probe.error ||
+      "wxc-exec.exe was not found. See bin\\README.md.";
+    $("tExe").textContent = st.mxcExe || "";
   }
-  if(step >= 1){
-    whoEl.textContent = "";
-    const b = document.createElement("b");
-    b.textContent = assistantName();
-    whoEl.appendChild(b);
-  }
-}
-nameInput.addEventListener("input", syncName);
 
-/* Persisted by POST /api/setup, which is the only write this page makes.
-   Everything else here reports and changes nothing. */
-async function saveSetup(){
-  try{
-    const r = await fetch("/api/setup", {
-      method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({assistantName: assistantName(), backdrop: chosenBackdrop})
+  // ---- lemonade
+  $("tSugg").innerHTML = "";
+  if (!lem.reachable) {
+    mark("Model", "bad");
+    $("tModel").innerHTML = "Not running. Start it with <code>lemonade-server serve</code>";
+  } else if (!lem.modelPresent) {
+    mark("Model", "bad");
+    $("tModel").innerHTML = "Running, but not serving <b>" +
+      esc(lem.model || "the configured model") + "</b>. Pick one with " +
+      "<code>python workshop\\models.py --pick NAME</code>";
+    (lem.suggestions || []).slice(0, 5).forEach((m) => {
+      const c = document.createElement("code");
+      c.textContent = m;
+      $("tSugg").appendChild(c);
     });
-    const j = await r.json();
-    if(j && j.setup && j.setup.assistantName){
-      nameInput.value = j.setup.assistantName;
-      syncName();
-    }
-    return !!(j && j.saved);
-  }catch(e){ return false; }
-}
+  } else {
+    mark("Model", "ok");
+    $("tModel").innerHTML = "Serving <b>" + esc(lem.model) + "</b>";
+  }
 
-/* =======================================================  the checks  === */
-/* Four rows, read from /api/state. Nothing below invents a result: a row is
-   green only because the host said so, and the wording keeps the three
-   separate Lemonade claims separate - reachable, serving the model we asked
-   for, weights actually in memory. */
-const CHECKS = ["sandbox", "lemonade", "model", "workspace"];
-const NAMES  = {sandbox:"Sandbox", lemonade:"Lemonade Server", model:"Model", workspace:"Workspace"};
+  // ---- weights
+  const state = w.state;
+  ready = state === "ready";
 
-const rowsEl = document.getElementById("rows");
-const barEl  = document.getElementById("bar");
-const progEl = document.getElementById("progtext");
+  if (ready) {
+    mark("Warm", "ok");
+    $("tWarm").innerHTML = "Loaded into memory" +
+      (w.ms ? " in <b>" + (w.ms / 1000).toFixed(1) + "s</b>." : ".");
+    setDragon("happy");
+  } else if (state === "warming") {
+    if (warmSince === null) warmSince = Date.now();
+    mark("Warm", "busy");
+    $("tWarm").innerHTML = "Loading into memory, <b>" +
+      Math.round((Date.now() - warmSince) / 1000) + "s</b>. This happens once.";
+    setDragon("thinking");
+  } else if (state === "failed") {
+    warmSince = null;
+    mark("Warm", "bad");
+    $("tWarm").textContent = w.error || "The warm-up request failed.";
+    setDragon("alert");
+  } else {
+    warmSince = null;
+    mark("Warm", "");
+    $("tWarm").textContent = "Nothing to load yet.";
+    setDragon("asleep");
+  }
 
   // ---- step 2
   //
@@ -389,8 +285,8 @@ const progEl = document.getElementById("progtext");
   } else {
     go.className = "act wait";
     go.textContent = "Loading";
-    $("note").innerHTML = 'In a hurry? <a href="' + dest + '">' +
-      'Go in now</a>, the first answer will just be slow.';
+    $("note").innerHTML = 'In a hurry? <a href="' + dest + '">Go in now</a>, the ' +
+      'first answer will just be slow.';
   }
 }
 
@@ -404,8 +300,25 @@ async function poll() {
   }
 }
 
+$("retry").addEventListener("click", async () => {
+  const b = $("retry");
+  b.disabled = true;
+  b.textContent = "Checking";
+  warmSince = null;
+  try { await fetch("/api/warmup", { method: "POST" }); } catch (e) { /* poll reports it */ }
+  b.disabled = false;
+  b.textContent = "Check again";
+  poll();
+});
+
+/* Going in before the weights are resident is allowed, but it happens through
+   the link in the note, not by clicking a button that says Loading. */
+$("go").addEventListener("click", (e) => {
+  if ($("go").classList.contains("wait")) e.preventDefault();
+});
+
 poll();
-setInterval(poll, 2000);
+setInterval(poll, 1200);
 </script>
 </body>
 </html>
