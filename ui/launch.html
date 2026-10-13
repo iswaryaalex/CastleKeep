@@ -143,7 +143,7 @@ body{overflow:auto; display:grid; place-items:center; min-height:100vh;
     <div class="step" id="step2">
       <span class="n">2</span>
       <div class="txt">
-        <div class="t" id="step2t">Sanctum</div>
+        <div class="t">Sanctum</div>
         <div class="d" id="step2d">The same sandbox, with an agent in front of it.</div>
       </div>
       <a class="act wait" id="go" href="/app">Loading</a>
@@ -151,7 +151,7 @@ body{overflow:auto; display:grid; place-items:center; min-height:100vh;
   </div>
 
   <p class="note" id="note"></p>
-  <p class="redo hidden" id="redo"><a href="/onboard">Run setup again &rarr;</a></p>
+  <p class="redo hidden" id="redo"><a href="/onboard">Redo setup &rarr;</a></p>
 
 </div>
 
@@ -251,24 +251,17 @@ function render(st) {
   }
 
   // ---- step 2
-  //
-  // Where "Open" goes depends on whether this machine has been set up. A
-  // participant on a fresh clone needs to name themselves and pick what their
-  // agent may do before any of the app makes sense; somebody coming back
-  // should not be asked twice.
+  // Always points at /app. If not yet onboarded the click handler redirects
+  // to /onboard first; once set up /app opens directly.
   const onboarded = !!st.profile;
-  const dest = onboarded ? "/app" : "/onboard";
   const go = $("go");
-  go.href = dest;
-  // Once set up, "Open" goes straight to the app - so re-running setup needs
-  // its own way in. Hidden on a fresh machine, where step 2 already is setup.
+  go.dataset.onboarded = onboarded ? "1" : "";
+
+  // Show "Redo setup" only after onboard is complete.
   $("redo").classList.toggle("hidden", !onboarded);
-  $("step2t").textContent = onboarded
-    ? (st.profile.agentName || "Sanctum")
-    : "Set up your agent";
   $("step2d").textContent = onboarded
     ? "The same sandbox, with an agent in front of it."
-    : "Name it, pick what it does, and decide what it may touch.";
+    : "First time? Set up your agent, then come back here.";
 
   const blocked = !lem.reachable || !lem.modelPresent || state === "failed";
   $("retryWrap").classList.toggle("hidden", !blocked);
@@ -280,13 +273,15 @@ function render(st) {
     $("note").innerHTML = "";
   } else if (blocked) {
     go.className = "act";
-    go.textContent = onboarded ? "Open anyway" : "Set up anyway";
-    $("note").textContent = "Setup, policy and the sandbox tabs all work without a model.";
+    go.textContent = onboarded ? "Open anyway" : "Set up →";
+    $("note").textContent = "Setup and the sandbox tabs work without a model.";
   } else {
     go.className = "act wait";
-    go.textContent = "Loading";
-    $("note").innerHTML = 'In a hurry? <a href="' + dest + '">Go in now</a>, the ' +
-      'first answer will just be slow.';
+    go.textContent = onboarded ? "Loading" : "Set up →";
+    if (onboarded)
+      $("note").innerHTML = 'In a hurry? <a href="/app">Go in now</a>, the first answer will be slow.';
+    else
+      $("note").innerHTML = '';
   }
 }
 
@@ -311,10 +306,17 @@ $("retry").addEventListener("click", async () => {
   poll();
 });
 
-/* Going in before the weights are resident is allowed, but it happens through
-   the link in the note, not by clicking a button that says Loading. */
+/* Step 2 click:
+   - Not onboarded → always go to /onboard regardless of model state.
+   - Onboarded + loading → block the click (use the note link to skip). */
 $("go").addEventListener("click", (e) => {
-  if ($("go").classList.contains("wait")) e.preventDefault();
+  const btn = $("go");
+  if (!btn.dataset.onboarded) {
+    e.preventDefault();
+    location.href = "/onboard";
+  } else if (btn.classList.contains("wait")) {
+    e.preventDefault();
+  }
 });
 
 poll();
